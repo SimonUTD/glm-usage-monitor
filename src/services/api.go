@@ -290,15 +290,116 @@ func (s *APIService) GetSyncStatus() (*models.SyncStatus, error) {
 	return status, nil
 }
 
-// GetSyncHistory retrieves sync history
-func (s *APIService) GetSyncHistory(pageNum, pageSize int) (*models.PaginatedResult, error) {
-	result, err := s.dbService.GetSyncHistory(pageNum, pageSize)
+// SyncHistoryResponse represents the format expected by frontend
+type SyncHistoryResponse struct {
+	SyncTime     string `json:"sync_time"`
+	BillingMonth string `json:"billing_month"`
+	Status       string `json:"status"`
+	SyncedCount  int    `json:"synced_count"`
+	FailedCount  int    `json:"failed_count"`
+	TotalCount   int    `json:"total_count"`
+	Message      string `json:"message"`
+}
+
+// GetSyncHistory retrieves sync history with filtering by sync type
+func (s *APIService) GetSyncHistory(syncType string, pageNum, pageSize int) (*models.PaginatedResult, error) {
+	// Get all sync history first
+	result, err := s.dbService.GetSyncHistory(1, 1000) // Get all records for filtering
 	if err != nil {
 		log.Printf("Error getting sync history: %v", err)
 		return nil, fmt.Errorf("failed to retrieve sync history: %w", err)
 	}
 
-	return result, nil
+	// Convert to frontend format and filter by sync type
+	var filteredHistory []SyncHistoryResponse
+	if result.Data != nil {
+		histories, ok := result.Data.([]models.SyncHistory)
+		if ok {
+			for _, history := range histories {
+				// Filter by sync type if specified
+				if syncType != "" && history.SyncType != syncType {
+					continue
+				}
+
+				// Calculate billing month from start time
+				billingMonth := history.StartTime.Format("2006-01")
+
+				// Calculate failed count
+				failedCount := 0
+				if history.Status == "failed" && history.TotalRecords > 0 {
+					failedCount = history.TotalRecords - history.RecordsSynced
+				}
+
+				// Format message
+				message := ""
+				if history.ErrorMessage != nil {
+					message = *history.ErrorMessage
+				}
+
+				response := SyncHistoryResponse{
+					SyncTime:     history.StartTime.Format("2006-01-02 15:04:05"),
+					BillingMonth: billingMonth,
+					Status:       getDisplayStatus(history.Status),
+					SyncedCount:  history.RecordsSynced,
+					FailedCount:  failedCount,
+					TotalCount:   history.TotalRecords,
+					Message:      message,
+				}
+				filteredHistory = append(filteredHistory, response)
+			}
+		}
+	}
+
+	// Apply pagination to filtered results
+	total := len(filteredHistory)
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageNum <= 0 {
+		pageNum = 1
+	}
+
+	start := (pageNum - 1) * pageSize
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+
+	var paginatedData []SyncHistoryResponse
+	if start < total {
+		paginatedData = filteredHistory[start:end]
+	} else {
+		paginatedData = []SyncHistoryResponse{}
+	}
+
+	// Build pagination info
+	totalPages := (total + pageSize - 1) / pageSize
+	pagination := models.PaginationParams{
+		Page:    pageNum,
+		Size:    pageSize,
+		Total:   total,
+		HasNext: pageNum < totalPages,
+	}
+
+	return &models.PaginatedResult{
+		Data:       paginatedData,
+		Pagination: pagination,
+		Total:      total, // Add Total field for frontend compatibility
+	}, nil
+}
+
+// getDisplayStatus converts internal status to display status
+func getDisplayStatus(status string) string {
+	switch status {
+	case "completed":
+		return "成功"
+	case "failed":
+		return "失败"
+	case "running":
+		return "运行中"
+	default:
+		return status
+	}
 }
 
 // SyncBills starts a sync operation for billing data

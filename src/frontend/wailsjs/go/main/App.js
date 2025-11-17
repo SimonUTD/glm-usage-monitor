@@ -6,12 +6,20 @@ export function CheckAPIConnectivity() {
   return window['go']['main']['App']['CheckAPIConnectivity']();
 }
 
+export function CleanupStaleSyncs() {
+  return window['go']['main']['App']['CleanupStaleSyncs']();
+}
+
 export function DeleteBill(arg1) {
   return window['go']['main']['App']['DeleteBill'](arg1);
 }
 
 export function DeleteToken(arg1) {
   return window['go']['main']['App']['DeleteToken'](arg1);
+}
+
+export function ForceResetSyncStatus() {
+  return window['go']['main']['App']['ForceResetSyncStatus']();
 }
 
 export function GetAPIService() {
@@ -26,6 +34,10 @@ export function GetAllTokens() {
   return window['go']['main']['App']['GetAllTokens']();
 }
 
+export function GetApiUsageProgress() {
+  return window['go']['main']['App']['GetApiUsageProgress']();
+}
+
 export function GetBillByID(arg1) {
   return window['go']['main']['App']['GetBillByID'](arg1);
 }
@@ -38,8 +50,20 @@ export function GetBillsByDateRange(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GetBillsByDateRange'](arg1, arg2, arg3, arg4);
 }
 
+export function GetBillsCount() {
+  return window['go']['main']['App']['GetBillsCount']();
+}
+
 export function GetConfig(arg1) {
   return window['go']['main']['App']['GetConfig'](arg1);
+}
+
+export function GetCurrentMembershipTier() {
+  return window['go']['main']['App']['GetCurrentMembershipTier']();
+}
+
+export function GetDailyUsage(arg1) {
+  return window['go']['main']['App']['GetDailyUsage'](arg1);
 }
 
 export function GetDatabase() {
@@ -50,6 +74,18 @@ export function GetDatabaseInfo() {
   return window['go']['main']['App']['GetDatabaseInfo']();
 }
 
+export function GetDayApiUsage() {
+  return window['go']['main']['App']['GetDayApiUsage']();
+}
+
+export function GetDayTokenUsage() {
+  return window['go']['main']['App']['GetDayTokenUsage']();
+}
+
+export function GetDayTotalCost() {
+  return window['go']['main']['App']['GetDayTotalCost']();
+}
+
 export function GetHourlyUsage(arg1) {
   return window['go']['main']['App']['GetHourlyUsage'](arg1);
 }
@@ -58,16 +94,40 @@ export function GetModelDistribution(arg1, arg2) {
   return window['go']['main']['App']['GetModelDistribution'](arg1, arg2);
 }
 
+export function GetMonthApiUsage() {
+  return window['go']['main']['App']['GetMonthApiUsage']();
+}
+
+export function GetMonthTokenUsage() {
+  return window['go']['main']['App']['GetMonthTokenUsage']();
+}
+
+export function GetMonthTotalCost() {
+  return window['go']['main']['App']['GetMonthTotalCost']();
+}
+
+export function GetMonthlyUsage() {
+  return window['go']['main']['App']['GetMonthlyUsage']();
+}
+
+export function GetProducts() {
+  return window['go']['main']['App']['GetProducts']();
+}
+
 export function GetRecentUsage(arg1) {
   return window['go']['main']['App']['GetRecentUsage'](arg1);
+}
+
+export function GetRunningSyncStatus() {
+  return window['go']['main']['App']['GetRunningSyncStatus']();
 }
 
 export function GetStats(arg1, arg2) {
   return window['go']['main']['App']['GetStats'](arg1, arg2);
 }
 
-export function GetSyncHistory(arg1, arg2) {
-  return window['go']['main']['App']['GetSyncHistory'](arg1, arg2);
+export function GetSyncHistory(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GetSyncHistory'](arg1, arg2, arg3);
 }
 
 export function GetSyncStatus() {
@@ -78,8 +138,28 @@ export function GetToken() {
   return window['go']['main']['App']['GetToken']();
 }
 
+export function GetTokenUsageProgress() {
+  return window['go']['main']['App']['GetTokenUsageProgress']();
+}
+
+export function GetTotalCostProgress() {
+  return window['go']['main']['App']['GetTotalCostProgress']();
+}
+
 export function GetUsageTrend(arg1) {
   return window['go']['main']['App']['GetUsageTrend'](arg1);
+}
+
+export function GetWeekApiUsage() {
+  return window['go']['main']['App']['GetWeekApiUsage']();
+}
+
+export function GetWeekTokenUsage() {
+  return window['go']['main']['App']['GetWeekTokenUsage']();
+}
+
+export function GetWeekTotalCost() {
+  return window['go']['main']['App']['GetWeekTotalCost']();
 }
 
 export function Greet(arg1) {
@@ -92,6 +172,10 @@ export function SaveToken(arg1, arg2) {
 
 export function SetConfig(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetConfig'](arg1, arg2, arg3);
+}
+
+export function StopAutoSync() {
+  return window['go']['main']['App']['StopAutoSync']();
 }
 
 export function SyncBills(arg1, arg2) {

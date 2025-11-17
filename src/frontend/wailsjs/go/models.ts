@@ -357,6 +357,7 @@ export namespace models {
 	export class PaginatedResult {
 	    data: any;
 	    pagination: PaginationParams;
+	    total: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new PaginatedResult(source);
@@ -366,6 +367,7 @@ export namespace models {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.data = source["data"];
 	        this.pagination = this.convertValues(source["pagination"], PaginationParams);
+	        this.total = source["total"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

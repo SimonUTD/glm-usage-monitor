@@ -156,4 +156,5 @@ type PaginationParams struct {
 type PaginatedResult struct {
 	Data       interface{}       `json:"data"`
 	Pagination PaginationParams  `json:"pagination"`
+	Total      int               `json:"total"`
 }

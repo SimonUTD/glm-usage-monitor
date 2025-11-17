@@ -149,12 +149,40 @@ func (s *DatabaseService) GetLatestSyncHistory() (*models.SyncHistory, error) {
 
 // GetRunningSyncCount counts the number of currently running syncs
 func (s *DatabaseService) GetRunningSyncCount() (int, error) {
+	// First, clean up any stale running syncs (older than 10 minutes)
+	err := s.CleanupStaleRunningSyncs()
+	if err != nil {
+		// Log error but don't fail the count
+		fmt.Printf("Warning: failed to cleanup stale running syncs: %v\n", err)
+	}
+
 	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM sync_history WHERE status = 'running'").Scan(&count)
+	err = s.db.QueryRow("SELECT COUNT(*) FROM sync_history WHERE status = 'running'").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count running syncs: %w", err)
 	}
 	return count, nil
+}
+
+// CleanupStaleRunningSyncs marks syncs that have been running too long as failed
+func (s *DatabaseService) CleanupStaleRunningSyncs() error {
+	// Mark syncs older than 10 minutes as failed
+	query := `
+		UPDATE sync_history
+		SET status = 'failed',
+		    end_time = ?,
+		    error_message = ?
+		WHERE status = 'running'
+		  AND start_time < datetime('now', '-10 minutes')
+	`
+
+	errorMessage := "Sync marked as failed due to timeout"
+	_, err := s.db.Exec(query, time.Now(), errorMessage)
+	if err != nil {
+		return fmt.Errorf("failed to cleanup stale running syncs: %w", err)
+	}
+
+	return nil
 }
 
 // ========== AutoSyncConfig Operations ==========

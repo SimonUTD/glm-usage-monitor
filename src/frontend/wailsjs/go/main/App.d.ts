@@ -7,9 +7,13 @@ import {main} from '../models';
 
 export function CheckAPIConnectivity():Promise<Record<string, any>>;
 
+export function CleanupStaleSyncs():Promise<Record<string, any>>;
+
 export function DeleteBill(arg1:number):Promise<void>;
 
 export function DeleteToken(arg1:number):Promise<void>;
+
+export function ForceResetSyncStatus():Promise<Record<string, any>>;
 
 export function GetAPIService():Promise<services.APIService>;
 
@@ -17,39 +21,77 @@ export function GetAllConfigs():Promise<Array<models.AutoSyncConfig>>;
 
 export function GetAllTokens():Promise<Array<models.APIToken>>;
 
+export function GetApiUsageProgress():Promise<Record<string, any>>;
+
 export function GetBillByID(arg1:number):Promise<models.ExpenseBill>;
 
 export function GetBills(arg1:models.BillFilter):Promise<models.PaginatedResult>;
 
 export function GetBillsByDateRange(arg1:time.Time,arg2:time.Time,arg3:number,arg4:number):Promise<models.PaginatedResult>;
 
+export function GetBillsCount():Promise<Record<string, any>>;
+
 export function GetConfig(arg1:string):Promise<string>;
+
+export function GetCurrentMembershipTier():Promise<Record<string, any>>;
+
+export function GetDailyUsage(arg1:number):Promise<Record<string, any>>;
 
 export function GetDatabase():Promise<main.Database>;
 
 export function GetDatabaseInfo():Promise<Record<string, any>>;
 
+export function GetDayApiUsage():Promise<number>;
+
+export function GetDayTokenUsage():Promise<number>;
+
+export function GetDayTotalCost():Promise<number>;
+
 export function GetHourlyUsage(arg1:number):Promise<Array<models.HourlyUsageData>>;
 
 export function GetModelDistribution(arg1:time.Time,arg2:time.Time):Promise<Array<models.ModelDistributionData>>;
 
+export function GetMonthApiUsage():Promise<number>;
+
+export function GetMonthTokenUsage():Promise<number>;
+
+export function GetMonthTotalCost():Promise<number>;
+
+export function GetMonthlyUsage():Promise<Record<string, any>>;
+
+export function GetProducts():Promise<Array<string>>;
+
 export function GetRecentUsage(arg1:number):Promise<Array<models.ExpenseBill>>;
+
+export function GetRunningSyncStatus():Promise<Record<string, any>>;
 
 export function GetStats(arg1:time.Time,arg2:time.Time):Promise<models.StatsResponse>;
 
-export function GetSyncHistory(arg1:number,arg2:number):Promise<models.PaginatedResult>;
+export function GetSyncHistory(arg1:string,arg2:number,arg3:number):Promise<models.PaginatedResult>;
 
 export function GetSyncStatus():Promise<models.SyncStatus>;
 
 export function GetToken():Promise<models.APIToken>;
 
+export function GetTokenUsageProgress():Promise<Record<string, any>>;
+
+export function GetTotalCostProgress():Promise<Record<string, any>>;
+
 export function GetUsageTrend(arg1:number):Promise<Array<models.HourlyUsageData>>;
+
+export function GetWeekApiUsage():Promise<number>;
+
+export function GetWeekTokenUsage():Promise<number>;
+
+export function GetWeekTotalCost():Promise<number>;
 
 export function Greet(arg1:string):Promise<string>;
 
 export function SaveToken(arg1:string,arg2:string):Promise<void>;
 
 export function SetConfig(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function StopAutoSync():Promise<Record<string, any>>;
 
 export function SyncBills(arg1:number,arg2:number):Promise<services.SyncResult>;
 

@@ -23,7 +23,11 @@ import {
   GetUsageTrend,
   CheckAPIConnectivity,
   GetDatabaseInfo,
-  SyncRecentMonths
+  SyncRecentMonths,
+  ForceResetSyncStatus,
+  GetApiUsageProgress,
+  GetTokenUsageProgress,
+  GetTotalCostProgress
 } from '../../wailsjs/go/main/App'
 
 /**
@@ -78,14 +82,17 @@ export default {
 
       if (startDate && endDate) {
         // 如果有日期范围，使用 GetBillsByDateRange
-        const result = await GetBillsByDateRange(startDate, endDate, page, pageSize)
+        // 将日期字符串转换为 Date 对象
+        const startDateTime = new Date(startDate)
+        const endDateTime = new Date(endDate)
+        const result = await GetBillsByDateRange(startDateTime, endDateTime, page, pageSize)
         return handleWailsSuccess(result)
       } else {
         // 否则使用 GetBills
         const billParams = {
-          page,
-          pageSize,
-          model
+          page_num: page,
+          page_size: pageSize,
+          model_name: model ? model : undefined
         }
         const result = await GetBills(billParams)
         return handleWailsSuccess(result)
@@ -139,7 +146,7 @@ export default {
           startDate = new Date(now.getTime() - 5 * 60 * 60 * 1000)
       }
 
-      // GetStats 期望 time.Time 指针，不能直接传字符串
+      // GetStats 期望 time.Time 指针，传 Date 对象
       const result = await GetStats(startDate, now)
       return handleWailsSuccess(result)
     } catch (error) {
@@ -160,8 +167,8 @@ export default {
   // 获取模型使用分布
   async getProductDistribution(hours = 5) {
     try {
-      const endDate = new Date().toISOString().split('T')[0]
-      const startDate = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString().split('T')[0]
+      const endDate = new Date()
+      const startDate = new Date(Date.now() - hours * 60 * 60 * 1000)
 
       const result = await GetModelDistribution(startDate, endDate)
       return handleWailsSuccess(result)
@@ -183,7 +190,7 @@ export default {
   // 获取同步历史
   async getSyncHistory(syncType, limit = 10, page = 1) {
     try {
-      const result = await GetSyncHistory(syncType, limit)
+      const result = await GetSyncHistory(syncType, page, limit)
       return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
@@ -386,7 +393,9 @@ export default {
   // 以下方法是为了兼容性保留的包装器，可能需要根据实际需求调整
   async getProducts() {
     try {
-      const result = await GetModelDistribution(new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0], new Date().toISOString().split('T')[0])
+      const startDate = new Date(Date.now() - 24*60*60*1000)
+      const endDate = new Date()
+      const result = await GetModelDistribution(startDate, endDate)
       return handleWailsSuccess(result?.models || [])
     } catch (error) {
       return handleWailsError(error)
@@ -405,7 +414,9 @@ export default {
   // 占位符方法 - 需要根据实际业务逻辑实现
   async getCurrentMembershipTier() {
     try {
-      const result = await GetStats(new Date(Date.now() - 24*60*60*1000), new Date())
+      const startDate = new Date(Date.now() - 24*60*60*1000)
+      const endDate = new Date()
+      const result = await GetStats(startDate, endDate)
       return handleWailsSuccess(result?.membership_info?.tier_name || 'free')
     } catch (error) {
       return handleWailsError(error)
@@ -414,8 +425,8 @@ export default {
 
   async getApiUsageProgress() {
     try {
-      const result = await GetRecentUsage(1)
-      return handleWailsSuccess(result?.usage || { used: 0, limit: 100 })
+      const result = await GetApiUsageProgress()
+      return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
     }
@@ -423,8 +434,8 @@ export default {
 
   async getTokenUsageProgress() {
     try {
-      const result = await GetRecentUsage(1)
-      return handleWailsSuccess(result?.token_usage || { used: 0, limit: 100000 })
+      const result = await GetTokenUsageProgress()
+      return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
     }
@@ -432,8 +443,8 @@ export default {
 
   async getTotalCostProgress() {
     try {
-      const result = await GetRecentUsage(1)
-      return handleWailsSuccess(result?.cost || { used: 0, limit: 10 })
+      const result = await GetTotalCostProgress()
+      return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
     }
@@ -461,6 +472,16 @@ export default {
     try {
       const result = await GetRecentUsage(30)
       return handleWailsSuccess(result?.cost?.total || 0)
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  // 重置同步状态（用于解决 "sync already in progress" 问题）
+  async resetSyncStatus() {
+    try {
+      const result = await ForceResetSyncStatus()
+      return handleWailsSuccess(result, result.message || '同步状态已重置')
     } catch (error) {
       return handleWailsError(error)
     }

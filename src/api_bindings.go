@@ -95,8 +95,8 @@ func (a *App) GetSyncStatus() (*models.SyncStatus, error) {
 }
 
 // GetSyncHistory retrieves sync history
-func (a *App) GetSyncHistory(pageNum, pageSize int) (*models.PaginatedResult, error) {
-	return a.apiService.GetSyncHistory(pageNum, pageSize)
+func (a *App) GetSyncHistory(syncType string, pageNum, pageSize int) (*models.PaginatedResult, error) {
+	return a.apiService.GetSyncHistory(syncType, pageNum, pageSize)
 }
 
 // SyncBills starts a sync operation for billing data
