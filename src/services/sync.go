@@ -50,11 +50,21 @@ func (s *DatabaseService) UpdateSyncHistory(id int, history *models.SyncHistory)
 	return nil
 }
 
-// GetSyncHistory retrieves sync history with pagination
-func (s *DatabaseService) GetSyncHistory(pageNum, pageSize int) (*models.PaginatedResult, error) {
+// GetSyncHistory retrieves sync history with pagination and optional sync type filtering
+func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int) (*models.PaginatedResult, error) {
+	// Build WHERE clause
+	whereClause := "1=1"
+	args := []interface{}{}
+	
+	if syncType != "" {
+		whereClause += " AND sync_type = ?"
+		args = append(args, syncType)
+	}
+
 	// Count total records
 	var total int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM sync_history").Scan(&total)
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM sync_history WHERE %s", whereClause)
+	err := s.db.QueryRow(countQuery, args...).Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count sync history: %w", err)
 	}
@@ -73,15 +83,17 @@ func (s *DatabaseService) GetSyncHistory(pageNum, pageSize int) (*models.Paginat
 	offset := (pageNum - 1) * pageSize
 
 	// Get data
-	query := `
+	query := fmt.Sprintf(`
 		SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
 		       total_records, page_synced, total_pages
 		FROM sync_history
+		WHERE %s
 		ORDER BY start_time DESC
 		LIMIT ? OFFSET ?
-	`
+	`, whereClause)
 
-	rows, err := s.db.Query(query, pageSize, offset)
+	args = append(args, pageSize, offset)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sync history: %w", err)
 	}

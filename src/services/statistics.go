@@ -24,18 +24,15 @@ func (s *StatisticsService) GetOverallStats(startDate, endDate *time.Time) (*mod
 	// Get total records and cash cost
 	whereClause := "1=1"
 	args := []interface{}{}
-	argIndex := 1
 
 	if startDate != nil {
-		whereClause += fmt.Sprintf(" AND DATE(transaction_time) >= DATE(?%d)", argIndex)
+		whereClause += " AND DATE(transaction_time) >= DATE(?)"
 		args = append(args, startDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	if endDate != nil {
-		whereClause += fmt.Sprintf(" AND DATE(transaction_time) <= DATE(?%d)", argIndex)
+		whereClause += " AND DATE(transaction_time) <= DATE(?)"
 		args = append(args, endDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	// Total records and cash cost
@@ -84,23 +81,20 @@ func (s *StatisticsService) GetOverallStats(startDate, endDate *time.Time) (*mod
 func (s *StatisticsService) GetHourlyUsage(startDate, endDate *time.Time) ([]models.HourlyUsageData, error) {
 	whereClause := "1=1"
 	args := []interface{}{}
-	argIndex := 1
 
 	if startDate != nil {
-		whereClause += fmt.Sprintf(" AND DATE(transaction_time) >= DATE(?%d)", argIndex)
+		whereClause += " AND DATE(transaction_time) >= DATE(?)"
 		args = append(args, startDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	if endDate != nil {
-		whereClause += fmt.Sprintf(" AND DATE(transaction_time) <= DATE(?%d)", argIndex)
+		whereClause += " AND DATE(transaction_time) <= DATE(?)"
 		args = append(args, endDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	// If no specific date range, get last 5 hours
 	if startDate == nil && endDate == nil {
-		whereClause += fmt.Sprintf(" AND transaction_time >= DATETIME('now', '-5 hours')")
+		whereClause += " AND transaction_time >= DATETIME('now', '-5 hours')"
 	}
 
 	query := fmt.Sprintf(`
@@ -145,18 +139,15 @@ func (s *StatisticsService) GetHourlyUsage(startDate, endDate *time.Time) ([]mod
 func (s *StatisticsService) GetModelDistribution(startDate, endDate *time.Time) ([]models.ModelDistributionData, error) {
 	whereClause := "1=1"
 	args := []interface{}{}
-	argIndex := 1
 
 	if startDate != nil {
-		whereClause += fmt.Sprintf(" AND DATE(transaction_time) >= DATE(?%d)", argIndex)
+		whereClause += " AND DATE(transaction_time) >= DATE(?)"
 		args = append(args, startDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	if endDate != nil {
-		whereClause += fmt.Sprintf(" AND DATE(transaction_time) <= DATE(?%d)", argIndex)
+		whereClause += " AND DATE(transaction_time) <= DATE(?)"
 		args = append(args, endDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	query := fmt.Sprintf(`
@@ -205,18 +196,15 @@ func (s *StatisticsService) GetModelDistribution(startDate, endDate *time.Time) 
 func (s *StatisticsService) GetChargeTypeStats(startDate, endDate *time.Time) ([]models.ChargeTypeStatsData, error) {
 	whereClause := "1=1"
 	args := []interface{}{}
-	argIndex := 1
 
 	if startDate != nil {
-		whereClause += fmt.Sprintf(" AND DATE(transaction_time) >= DATE(?%d)", argIndex)
+		whereClause += " AND DATE(transaction_time) >= DATE(?)"
 		args = append(args, startDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	if endDate != nil {
-		whereClause += fmt.Sprintf(" AND DATE(transaction_time) <= DATE(?%d)", argIndex)
+		whereClause += " AND DATE(transaction_time) <= DATE(?)"
 		args = append(args, endDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	query := fmt.Sprintf(`
@@ -308,7 +296,7 @@ func (s *StatisticsService) GetUsageTrend(days int) ([]models.HourlyUsageData, e
 		days = 7
 	}
 
-	query := `
+	query := fmt.Sprintf(`
 		SELECT
 			DATE(transaction_time) as date,
 			COUNT(*) as call_count,
@@ -318,9 +306,9 @@ func (s *StatisticsService) GetUsageTrend(days int) ([]models.HourlyUsageData, e
 		WHERE transaction_time >= DATE('now', '-%d days')
 		GROUP BY DATE(transaction_time)
 		ORDER BY date ASC
-	`
+	`, days)
 
-	rows, err := s.db.Query(query, days)
+	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query usage trend: %w", err)
 	}

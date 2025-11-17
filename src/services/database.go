@@ -127,56 +127,47 @@ func (s *DatabaseService) BatchCreateExpenseBills(bills []*models.ExpenseBill) e
 func (s *DatabaseService) GetExpenseBills(filter *models.BillFilter) (*models.PaginatedResult, error) {
 	whereConditions := []string{"1=1"}
 	args := []interface{}{}
-	argIndex := 1
 
 	// Build WHERE conditions
 	if filter.StartDate != nil {
-		whereConditions = append(whereConditions, fmt.Sprintf("DATE(transaction_time) >= DATE(?%d)", argIndex))
+		whereConditions = append(whereConditions, "DATE(transaction_time) >= DATE(?)")
 		args = append(args, filter.StartDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	if filter.EndDate != nil {
-		whereConditions = append(whereConditions, fmt.Sprintf("DATE(transaction_time) <= DATE(?%d)", argIndex))
+		whereConditions = append(whereConditions, "DATE(transaction_time) <= DATE(?)")
 		args = append(args, filter.EndDate.Format("2006-01-02"))
-		argIndex++
 	}
 
 	if filter.ModelName != nil && *filter.ModelName != "" {
-		whereConditions = append(whereConditions, fmt.Sprintf("model_name = ?%d", argIndex))
+		whereConditions = append(whereConditions, "model_name = ?")
 		args = append(args, *filter.ModelName)
-		argIndex++
 	}
 
 	if filter.ChargeType != nil && *filter.ChargeType != "" {
-		whereConditions = append(whereConditions, fmt.Sprintf("charge_type = ?%d", argIndex))
+		whereConditions = append(whereConditions, "charge_type = ?")
 		args = append(args, *filter.ChargeType)
-		argIndex++
 	}
 
 	if filter.GroupName != nil && *filter.GroupName != "" {
-		whereConditions = append(whereConditions, fmt.Sprintf("group_name LIKE ?%d", argIndex))
+		whereConditions = append(whereConditions, "group_name LIKE ?")
 		args = append(args, "%"+*filter.GroupName+"%")
-		argIndex++
 	}
 
 	if filter.MinCashCost != nil {
-		whereConditions = append(whereConditions, fmt.Sprintf("cash_cost >= ?%d", argIndex))
+		whereConditions = append(whereConditions, "cash_cost >= ?")
 		args = append(args, *filter.MinCashCost)
-		argIndex++
 	}
 
 	if filter.MaxCashCost != nil {
-		whereConditions = append(whereConditions, fmt.Sprintf("cash_cost <= ?%d", argIndex))
+		whereConditions = append(whereConditions, "cash_cost <= ?")
 		args = append(args, *filter.MaxCashCost)
-		argIndex++
 	}
 
 	if filter.SearchTerm != nil && *filter.SearchTerm != "" {
-		whereConditions = append(whereConditions, fmt.Sprintf("(charge_name LIKE ?%d OR model_name LIKE ?%d OR billing_no LIKE ?%d)", argIndex, argIndex+1, argIndex+2))
+		whereConditions = append(whereConditions, "(charge_name LIKE ? OR model_name LIKE ? OR billing_no LIKE ?)")
 		searchTerm := "%" + *filter.SearchTerm + "%"
 		args = append(args, searchTerm, searchTerm, searchTerm)
-		argIndex += 3
 	}
 
 	whereClause := strings.Join(whereConditions, " AND ")
@@ -215,8 +206,8 @@ func (s *DatabaseService) GetExpenseBills(filter *models.BillFilter) (*models.Pa
 		FROM expense_bills
 		WHERE %s
 		ORDER BY transaction_time DESC
-		LIMIT ?%d OFFSET ?%d
-	`, whereClause, argIndex, argIndex+1)
+		LIMIT ? OFFSET ?
+	`, whereClause)
 
 	args = append(args, pageSize, offset)
 

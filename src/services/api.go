@@ -303,8 +303,8 @@ type SyncHistoryResponse struct {
 
 // GetSyncHistory retrieves sync history with filtering by sync type
 func (s *APIService) GetSyncHistory(syncType string, pageNum, pageSize int) (*models.PaginatedResult, error) {
-	// Get all sync history first
-	result, err := s.dbService.GetSyncHistory(1, 1000) // Get all records for filtering
+	// Get sync history with sync type filtering
+	result, err := s.dbService.GetSyncHistory(syncType, pageNum, pageSize)
 	if err != nil {
 		log.Printf("Error getting sync history: %v", err)
 		return nil, fmt.Errorf("failed to retrieve sync history: %w", err)
