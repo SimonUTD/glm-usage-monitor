@@ -25,7 +25,7 @@ export function GetApiUsageProgress():Promise<Record<string, any>>;
 
 export function GetBillByID(arg1:number):Promise<models.ExpenseBill>;
 
-export function GetBills(arg1:models.BillFilter):Promise<models.PaginatedResult>;
+export function GetBills(arg1:any):Promise<models.PaginatedResult>;
 
 export function GetBillsByDateRange(arg1:time.Time,arg2:time.Time,arg3:number,arg4:number):Promise<models.PaginatedResult>;
 
@@ -93,9 +93,9 @@ export function SetConfig(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function StopAutoSync():Promise<Record<string, any>>;
 
-export function SyncBills(arg1:number,arg2:number):Promise<services.SyncResult>;
+export function SyncBills(arg1:number,arg2:number):Promise<Record<string, any>>;
 
-export function SyncRecentMonths(arg1:number):Promise<Array<services.SyncResult>>;
+export function SyncRecentMonths(arg1:number):Promise<Record<string, any>>;
 
 export function ValidateSavedToken():Promise<boolean>;
 

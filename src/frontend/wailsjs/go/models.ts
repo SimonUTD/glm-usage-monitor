@@ -114,54 +114,6 @@ export namespace models {
 		    return a;
 		}
 	}
-	export class BillFilter {
-	    page_num: number;
-	    page_size: number;
-	    start_date?: time.Time;
-	    end_date?: time.Time;
-	    model_name?: string;
-	    charge_type?: string;
-	    group_name?: string;
-	    min_cash_cost?: number;
-	    max_cash_cost?: number;
-	    search_term?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new BillFilter(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.page_num = source["page_num"];
-	        this.page_size = source["page_size"];
-	        this.start_date = this.convertValues(source["start_date"], time.Time);
-	        this.end_date = this.convertValues(source["end_date"], time.Time);
-	        this.model_name = source["model_name"];
-	        this.charge_type = source["charge_type"];
-	        this.group_name = source["group_name"];
-	        this.min_cash_cost = source["min_cash_cost"];
-	        this.max_cash_cost = source["max_cash_cost"];
-	        this.search_term = source["search_term"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 	export class ChargeTypeStatsData {
 	    charge_type: string;
 	    call_count: number;
@@ -487,52 +439,6 @@ export namespace services {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	
 	    }
-	}
-	export class SyncResult {
-	    success: boolean;
-	    message: string;
-	    total_items: number;
-	    synced_items: number;
-	    failed_items: number;
-	    skipped_items: number;
-	    duration: number;
-	    error_message?: string;
-	    processed_bills?: models.ExpenseBill[];
-	
-	    static createFrom(source: any = {}) {
-	        return new SyncResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.success = source["success"];
-	        this.message = source["message"];
-	        this.total_items = source["total_items"];
-	        this.synced_items = source["synced_items"];
-	        this.failed_items = source["failed_items"];
-	        this.skipped_items = source["skipped_items"];
-	        this.duration = source["duration"];
-	        this.error_message = source["error_message"];
-	        this.processed_bills = this.convertValues(source["processed_bills"], models.ExpenseBill);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 
 }

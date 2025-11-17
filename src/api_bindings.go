@@ -1,16 +1,44 @@
 package main
 
 import (
+	"fmt"
 	"glm-usage-monitor/models"
-	"glm-usage-monitor/services"
 	"time"
 )
 
 // ========== Bill Management API Bindings ==========
 
 // GetBills retrieves expense bills with filtering and pagination
-func (a *App) GetBills(filter *models.BillFilter) (*models.PaginatedResult, error) {
-	return a.apiService.GetBills(filter)
+func (a *App) GetBills(filter interface{}) (*models.PaginatedResult, error) {
+	// Convert the filter from interface{} to BillFilter
+	var billFilter *models.BillFilter
+
+	if filter != nil {
+		// Try to convert to map[string]interface{}
+		if filterMap, ok := filter.(map[string]interface{}); ok {
+			billFilter = &models.BillFilter{
+				PageNum:  1,
+				PageSize: 20,
+			}
+
+			if pageNum, ok := filterMap["page_num"].(float64); ok {
+				billFilter.PageNum = int(pageNum)
+			}
+			if pageSize, ok := filterMap["page_size"].(float64); ok {
+				billFilter.PageSize = int(pageSize)
+			}
+			if modelName, ok := filterMap["model_name"].(string); ok && modelName != "" {
+				billFilter.ModelName = &modelName
+			}
+		}
+	} else {
+		billFilter = &models.BillFilter{
+			PageNum:  1,
+			PageSize: 20,
+		}
+	}
+
+	return a.apiService.GetBills(billFilter)
 }
 
 // GetBillByID retrieves a single expense bill by ID
@@ -100,13 +128,39 @@ func (a *App) GetSyncHistory(syncType string, pageNum, pageSize int) (*models.Pa
 }
 
 // SyncBills starts a sync operation for billing data
-func (a *App) SyncBills(year, month int) (*services.SyncResult, error) {
-	return a.apiService.SyncBills(year, month, nil) // No progress callback for now
+func (a *App) SyncBills(year, month int) (map[string]interface{}, error) {
+	result, err := a.apiService.SyncBills(year, month, nil) // No progress callback for now
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}, err
+	}
+
+	return map[string]interface{}{
+		"success":      result.Success,
+		"message":      "Sync completed successfully",
+		"syncedItems":  result.SyncedItems,
+		"totalItems":   result.TotalItems,
+		"failedItems":  result.FailedItems,
+	}, nil
 }
 
 // SyncRecentMonths syncs billing data for recent months
-func (a *App) SyncRecentMonths(months int) ([]*services.SyncResult, error) {
-	return a.apiService.SyncRecentMonths(months, nil) // No progress callback for now
+func (a *App) SyncRecentMonths(months int) (map[string]interface{}, error) {
+	results, err := a.apiService.SyncRecentMonths(months, nil) // No progress callback for now
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}, err
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Synced %d months", len(results)),
+		"results": results,
+	}, nil
 }
 
 // ========== Configuration Management API Bindings ==========
