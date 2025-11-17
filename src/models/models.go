@@ -28,6 +28,44 @@ type ExpenseBill struct {
 	TimeWindowEnd     time.Time `json:"time_window_end" db:"time_window_end"`
 	TimeWindow        string    `json:"time_window" db:"time_window"`
 	CreateTime        time.Time `json:"create_time" db:"create_time"`
+	
+	// === 新增字段：模型信息字段 ===
+	APIKey            string    `json:"api_key" db:"api_key"`
+	ModelCode         string    `json:"model_code" db:"model_code"`
+	ModelProductType  string    `json:"model_product_type" db:"model_product_type"`
+	ModelProductSubtype string  `json:"model_product_subtype" db:"model_product_subtype"`
+	ModelProductCode  string    `json:"model_product_code" db:"model_product_code"`
+	ModelProductName  string    `json:"model_product_name" db:"model_product_name"`
+	
+	// === 新增字段：支付和成本信息字段 ===
+	PaymentType       string    `json:"payment_type" db:"payment_type"`
+	StartTime         string    `json:"start_time" db:"start_time"`
+	EndTime           string    `json:"end_time" db:"end_time"`
+	BusinessID        string    `json:"business_id" db:"business_id"`
+	CostPrice         float64   `json:"cost_price" db:"cost_price"`
+	CostUnit          string    `json:"cost_unit" db:"cost_unit"`
+	UsageCount        float64   `json:"usage_count" db:"usage_count"`
+	UsageExempt       float64   `json:"usage_exempt" db:"usage_exempt"`
+	UsageUnit         string    `json:"usage_unit" db:"usage_unit"`
+	Currency          string    `json:"currency" db:"currency"`
+	
+	// === 新增字段：金额信息字段 ===
+	SettlementAmount  float64   `json:"settlement_amount" db:"settlement_amount"`
+	GiftDeductAmount  float64   `json:"gift_deduct_amount" db:"gift_deduct_amount"`
+	DueAmount         float64   `json:"due_amount" db:"due_amount"`
+	PaidAmount        float64   `json:"paid_amount" db:"paid_amount"`
+	UnpaidAmount      float64   `json:"unpaid_amount" db:"unpaid_amount"`
+	BillingStatus     string    `json:"billing_status" db:"billing_status"`
+	InvoicingAmount   float64   `json:"invoicing_amount" db:"invoicing_amount"`
+	InvoicedAmount    float64   `json:"invoiced_amount" db:"invoiced_amount"`
+	
+	// === 新增字段：Token业务字段 ===
+	TokenAccountID    string    `json:"token_account_id" db:"token_account_id"`
+	TokenResourceNo   string    `json:"token_resource_no" db:"token_resource_no"`
+	TokenResourceName string    `json:"token_resource_name" db:"token_resource_name"`
+	DeductUsage       float64   `json:"deduct_usage" db:"deduct_usage"`
+	DeductAfter       string    `json:"deduct_after" db:"deduct_after"`
+	TokenType         string    `json:"token_type" db:"token_type"`
 }
 
 // APIToken represents the api_tokens table structure

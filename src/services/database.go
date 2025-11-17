@@ -29,16 +29,41 @@ func (s *DatabaseService) CreateExpenseBill(bill *models.ExpenseBill) error {
 			discount_rate, cost_rate, cash_cost, billing_no, order_time,
 			use_group_id, group_id, charge_unit, charge_count, charge_unit_symbol,
 			trial_cash_cost, transaction_time, time_window_start, time_window_end,
-			time_window, create_time
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			time_window, create_time,
+			
+			-- 新增字段：模型信息字段
+			api_key, model_code, model_product_type, model_product_subtype, model_product_code, model_product_name,
+			
+			-- 新增字段：支付和成本信息字段
+			payment_type, start_time, end_time, business_id, cost_price, cost_unit, usage_count, usage_exempt, usage_unit, currency,
+			
+			-- 新增字段：金额信息字段
+			settlement_amount, gift_deduct_amount, due_amount, paid_amount, unpaid_amount, billing_status, invoicing_amount, invoiced_amount,
+			
+			-- 新增字段：Token业务字段
+			token_account_id, token_resource_no, token_resource_name, deduct_usage, deduct_after, token_type
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := s.db.Exec(query,
+		// 原有字段
 		bill.ChargeName, bill.ChargeType, bill.ModelName, bill.UseGroupName, bill.GroupName,
 		bill.DiscountRate, bill.CostRate, bill.CashCost, bill.BillingNo, bill.OrderTime,
 		bill.UseGroupID, bill.GroupID, bill.ChargeUnit, bill.ChargeCount, bill.ChargeUnitSymbol,
 		bill.TrialCashCost, bill.TransactionTime, bill.TimeWindowStart, bill.TimeWindowEnd,
 		bill.TimeWindow, bill.CreateTime,
+		
+		// 模型信息字段
+		bill.APIKey, bill.ModelCode, bill.ModelProductType, bill.ModelProductSubtype, bill.ModelProductCode, bill.ModelProductName,
+		
+		// 支付和成本信息字段
+		bill.PaymentType, bill.StartTime, bill.EndTime, bill.BusinessID, bill.CostPrice, bill.CostUnit, bill.UsageCount, bill.UsageExempt, bill.UsageUnit, bill.Currency,
+		
+		// 金额信息字段
+		bill.SettlementAmount, bill.GiftDeductAmount, bill.DueAmount, bill.PaidAmount, bill.UnpaidAmount, bill.BillingStatus, bill.InvoicingAmount, bill.InvoicedAmount,
+		
+		// Token业务字段
+		bill.TokenAccountID, bill.TokenResourceNo, bill.TokenResourceName, bill.DeductUsage, bill.DeductAfter, bill.TokenType,
 	)
 
 	if err != nil {

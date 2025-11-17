@@ -610,3 +610,196 @@ func (s *APIService) CheckAPIConnectivity() (map[string]interface{}, error) {
 
 	return result, nil
 }
+
+// ========== Progress Tracking APIs ==========
+
+// GetApiUsageProgress retrieves API usage progress against limits
+func (s *APIService) GetApiUsageProgress() (map[string]interface{}, error) {
+	// Get current month's API usage
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	
+	// Get API usage count for current month
+	usageStats, err := s.statsService.GetOverallStats(&startOfMonth, &now)
+	if err != nil {
+		log.Printf("Error getting API usage stats: %v", err)
+		return nil, fmt.Errorf("failed to get API usage stats: %w", err)
+	}
+
+	// Get membership tier limits
+	limits, err := s.dbService.GetMembershipTierLimits("free") // Default to free tier
+	if err != nil {
+		log.Printf("Error getting membership limits: %v", err)
+		// Continue with default limits
+		limits = &models.MembershipTierLimit{
+			DailyLimit:   &[]int{1000}[0],   // Default daily limit
+			MonthlyLimit: &[]int{30000}[0],  // Default monthly limit
+		}
+	}
+
+	apiUsageCount := usageStats.TotalRecords
+	dailyLimit := 1000
+	monthlyLimit := 30000
+	
+	if limits.DailyLimit != nil {
+		dailyLimit = *limits.DailyLimit
+	}
+	if limits.MonthlyLimit != nil {
+		monthlyLimit = *limits.MonthlyLimit
+	}
+
+	// Calculate today's usage
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayStats, err := s.statsService.GetOverallStats(&todayStart, &now)
+	if err != nil {
+		log.Printf("Error getting today's API usage: %v", err)
+		todayStats = usageStats // Fallback to monthly stats
+	}
+
+	result := map[string]interface{}{
+		"current_usage": apiUsageCount,
+		"daily_usage":   todayStats.TotalRecords,
+		"daily_limit":   dailyLimit,
+		"monthly_limit": monthlyLimit,
+		"daily_percentage": float64(todayStats.TotalRecords) / float64(dailyLimit) * 100,
+		"monthly_percentage": float64(apiUsageCount) / float64(monthlyLimit) * 100,
+		"tier": "free",
+	}
+
+	return result, nil
+}
+
+// GetTokenUsageProgress retrieves Token usage progress against limits
+func (s *APIService) GetTokenUsageProgress() (map[string]interface{}, error) {
+	// Get current month's Token usage
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	
+	// Calculate token usage from stats
+	usageStats, err := s.statsService.GetOverallStats(&startOfMonth, &now)
+	if err != nil {
+		log.Printf("Error getting token usage stats: %v", err)
+		return nil, fmt.Errorf("failed to get token usage stats: %w", err)
+	}
+
+	// Get membership tier limits for tokens
+	limits, err := s.dbService.GetMembershipTierLimits("free")
+	if err != nil {
+		log.Printf("Error getting membership limits: %v", err)
+		limits = &models.MembershipTierLimit{
+			MaxTokens: &[]int{1000000}[0], // Default 1M tokens
+		}
+	}
+
+	// Calculate total token usage (sum of all token usage from bills)
+	var totalTokenUsage float64 = 0
+	for _, usage := range usageStats.HourlyUsage {
+		totalTokenUsage += usage.TokenUsage
+	}
+
+	maxTokens := 1000000
+	if limits.MaxTokens != nil {
+		maxTokens = *limits.MaxTokens
+	}
+
+	// Calculate today's token usage
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayStats, err := s.statsService.GetOverallStats(&todayStart, &now)
+	if err != nil {
+		log.Printf("Error getting today's token usage: %v", err)
+		todayStats = usageStats
+	}
+
+	var todayTokenUsage float64 = 0
+	for _, usage := range todayStats.HourlyUsage {
+		todayTokenUsage += usage.TokenUsage
+	}
+
+	result := map[string]interface{}{
+		"current_usage": totalTokenUsage,
+		"daily_usage":   todayTokenUsage,
+		"monthly_limit": float64(maxTokens),
+		"daily_percentage": todayTokenUsage / float64(maxTokens/30) * 100, // Approximate daily limit
+		"monthly_percentage": totalTokenUsage / float64(maxTokens) * 100,
+		"tier": "free",
+		"tokens_formatted": formatTokenCount(totalTokenUsage),
+		"limit_formatted": formatTokenCount(float64(maxTokens)),
+	}
+
+	return result, nil
+}
+
+// GetTotalCostProgress retrieves total cost progress against limits
+func (s *APIService) GetTotalCostProgress() (map[string]interface{}, error) {
+	// Get current month's total cost
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	
+	usageStats, err := s.statsService.GetOverallStats(&startOfMonth, &now)
+	if err != nil {
+		log.Printf("Error getting cost stats: %v", err)
+		return nil, fmt.Errorf("failed to get cost stats: %w", err)
+	}
+
+	// Default cost limits (in yuan)
+	dailyCostLimit := 50.0   // 50 yuan per day
+	monthlyCostLimit := 1000.0 // 1000 yuan per month
+
+	// Calculate today's cost
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayStats, err := s.statsService.GetOverallStats(&todayStart, &now)
+	if err != nil {
+		log.Printf("Error getting today's cost: %v", err)
+		todayStats = usageStats
+	}
+
+	// Calculate total cost from stats
+	var monthlyCost float64 = 0
+	for _, usage := range usageStats.HourlyUsage {
+		monthlyCost += usage.CashCost
+	}
+
+	var todayCost float64 = 0
+	for _, usage := range todayStats.HourlyUsage {
+		todayCost += usage.CashCost
+	}
+
+	result := map[string]interface{}{
+		"current_usage": monthlyCost,
+		"daily_usage":   todayCost,
+		"daily_limit":   dailyCostLimit,
+		"monthly_limit": monthlyCostLimit,
+		"daily_percentage": todayCost / dailyCostLimit * 100,
+		"monthly_percentage": monthlyCost / monthlyCostLimit * 100,
+		"currency": "CNY",
+		"tier": "free",
+		"formatted_daily": fmt.Sprintf("¥%.2f", todayCost),
+		"formatted_monthly": fmt.Sprintf("¥%.2f", monthlyCost),
+		"formatted_daily_limit": fmt.Sprintf("¥%.2f", dailyCostLimit),
+		"formatted_monthly_limit": fmt.Sprintf("¥%.2f", monthlyCostLimit),
+	}
+
+	return result, nil
+}
+
+// ForceResetSyncStatus forces reset of sync status (for error recovery)
+func (s *APIService) ForceResetSyncStatus() error {
+	err := s.dbService.ResetRunningSyncs()
+	if err != nil {
+		log.Printf("Error resetting sync status: %v", err)
+		return fmt.Errorf("failed to reset sync status: %w", err)
+	}
+
+	log.Printf("Successfully reset all running sync statuses")
+	return nil
+}
+
+// Helper function to format token count
+func formatTokenCount(tokens float64) string {
+	if tokens >= 1000000 {
+		return fmt.Sprintf("%.1fM", tokens/1000000)
+	} else if tokens >= 1000 {
+		return fmt.Sprintf("%.1fK", tokens/1000)
+	}
+	return fmt.Sprintf("%.0f", tokens)
+}

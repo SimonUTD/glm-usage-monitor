@@ -297,6 +297,30 @@ func (s *DatabaseService) GetAutoSyncStatus() (*models.SyncStatus, error) {
 
 // ========== MembershipTierLimit Operations ==========
 
+// ResetRunningSyncs forces reset of all running syncs to failed status
+func (s *DatabaseService) ResetRunningSyncs() error {
+	query := `
+		UPDATE sync_history
+		SET status = 'failed',
+		    end_time = ?,
+		    error_message = ?
+		WHERE status = 'running'
+	`
+
+	errorMessage := "Sync status reset manually"
+	_, err := s.db.Exec(query, time.Now(), errorMessage)
+	if err != nil {
+		return fmt.Errorf("failed to reset running syncs: %w", err)
+	}
+
+	return nil
+}
+
+// GetMembershipTierLimits retrieves membership tier information by name (plural version for compatibility)
+func (s *DatabaseService) GetMembershipTierLimits(tierName string) (*models.MembershipTierLimit, error) {
+	return s.GetMembershipTierLimit(tierName)
+}
+
 // GetMembershipTierLimit retrieves membership tier information by name
 func (s *DatabaseService) GetMembershipTierLimit(tierName string) (*models.MembershipTierLimit, error) {
 	query := `

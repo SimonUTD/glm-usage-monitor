@@ -155,6 +155,36 @@ export namespace models {
 	    time_window_end: time.Time;
 	    time_window: string;
 	    create_time: time.Time;
+	    api_key: string;
+	    model_code: string;
+	    model_product_type: string;
+	    model_product_subtype: string;
+	    model_product_code: string;
+	    model_product_name: string;
+	    payment_type: string;
+	    start_time: string;
+	    end_time: string;
+	    business_id: string;
+	    cost_price: number;
+	    cost_unit: string;
+	    usage_count: number;
+	    usage_exempt: number;
+	    usage_unit: string;
+	    currency: string;
+	    settlement_amount: number;
+	    gift_deduct_amount: number;
+	    due_amount: number;
+	    paid_amount: number;
+	    unpaid_amount: number;
+	    billing_status: string;
+	    invoicing_amount: number;
+	    invoiced_amount: number;
+	    token_account_id: string;
+	    token_resource_no: string;
+	    token_resource_name: string;
+	    deduct_usage: number;
+	    deduct_after: string;
+	    token_type: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExpenseBill(source);
@@ -184,6 +214,36 @@ export namespace models {
 	        this.time_window_end = this.convertValues(source["time_window_end"], time.Time);
 	        this.time_window = source["time_window"];
 	        this.create_time = this.convertValues(source["create_time"], time.Time);
+	        this.api_key = source["api_key"];
+	        this.model_code = source["model_code"];
+	        this.model_product_type = source["model_product_type"];
+	        this.model_product_subtype = source["model_product_subtype"];
+	        this.model_product_code = source["model_product_code"];
+	        this.model_product_name = source["model_product_name"];
+	        this.payment_type = source["payment_type"];
+	        this.start_time = source["start_time"];
+	        this.end_time = source["end_time"];
+	        this.business_id = source["business_id"];
+	        this.cost_price = source["cost_price"];
+	        this.cost_unit = source["cost_unit"];
+	        this.usage_count = source["usage_count"];
+	        this.usage_exempt = source["usage_exempt"];
+	        this.usage_unit = source["usage_unit"];
+	        this.currency = source["currency"];
+	        this.settlement_amount = source["settlement_amount"];
+	        this.gift_deduct_amount = source["gift_deduct_amount"];
+	        this.due_amount = source["due_amount"];
+	        this.paid_amount = source["paid_amount"];
+	        this.unpaid_amount = source["unpaid_amount"];
+	        this.billing_status = source["billing_status"];
+	        this.invoicing_amount = source["invoicing_amount"];
+	        this.invoiced_amount = source["invoiced_amount"];
+	        this.token_account_id = source["token_account_id"];
+	        this.token_resource_no = source["token_resource_no"];
+	        this.token_resource_name = source["token_resource_name"];
+	        this.deduct_usage = source["deduct_usage"];
+	        this.deduct_after = source["deduct_after"];
+	        this.token_type = source["token_type"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

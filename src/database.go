@@ -3,8 +3,10 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -72,6 +74,31 @@ func getDatabasePath() (string, error) {
 
 // initSchema creates all necessary database tables
 func (db *Database) initSchema() error {
+	// First, create tables with all fields including new ones
+	if err := db.createTables(); err != nil {
+		return fmt.Errorf("failed to create tables: %w", err)
+	}
+
+	// Then, migrate existing data by adding new columns if they don't exist
+	if err := db.migrateExistingTables(); err != nil {
+		return fmt.Errorf("failed to migrate existing tables: %w", err)
+	}
+
+	// Create indexes for better performance
+	if err := db.createIndexes(); err != nil {
+		return fmt.Errorf("failed to create indexes: %w", err)
+	}
+
+	// Insert default configuration values
+	if err := db.insertDefaultConfigs(); err != nil {
+		return fmt.Errorf("failed to insert default configs: %w", err)
+	}
+
+	return nil
+}
+
+// createTables creates the database tables
+func (db *Database) createTables() error {
 	schemas := []string{
 		// expense_bills table - main table for storing GLM billing data
 		`CREATE TABLE IF NOT EXISTS expense_bills (
@@ -96,7 +123,45 @@ func (db *Database) initSchema() error {
 			time_window_start DATETIME,
 			time_window_end DATETIME,
 			time_window TEXT,
-			create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			
+			-- === 模型信息字段 ===
+			api_key TEXT,
+			model_code TEXT,
+			model_product_type TEXT,
+			model_product_subtype TEXT,
+			model_product_code TEXT,
+			model_product_name TEXT,
+			
+			-- === 支付和成本信息字段 ===
+			payment_type TEXT,
+			start_time TEXT,
+			end_time TEXT,
+			business_id TEXT,
+			cost_price REAL,
+			cost_unit TEXT,
+			usage_count REAL,
+			usage_exempt REAL,
+			usage_unit TEXT,
+			currency TEXT DEFAULT 'CNY',
+			
+			-- === 金额信息字段 ===
+			settlement_amount REAL,
+			gift_deduct_amount REAL DEFAULT 0,
+			due_amount REAL,
+			paid_amount REAL DEFAULT 0,
+			unpaid_amount REAL DEFAULT 0,
+			billing_status TEXT DEFAULT 'unpaid',
+			invoicing_amount REAL DEFAULT 0,
+			invoiced_amount REAL DEFAULT 0,
+			
+			-- === Token业务字段 ===
+			token_account_id TEXT,
+			token_resource_no TEXT,
+			token_resource_name TEXT,
+			deduct_usage REAL DEFAULT 0,
+			deduct_after TEXT,
+			token_type TEXT
 		)`,
 
 		// api_tokens table - for storing API tokens
@@ -153,12 +218,75 @@ func (db *Database) initSchema() error {
 		}
 	}
 
-	// Create indexes for better performance
+	return nil
+}
+
+// migrateExistingTables adds new columns to existing tables
+func (db *Database) migrateExistingTables() error {
+	migrations := []string{
+		// === 模型信息字段 ===
+		"ALTER TABLE expense_bills ADD COLUMN api_key TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN model_code TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN model_product_type TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN model_product_subtype TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN model_product_code TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN model_product_name TEXT",
+		
+		// === 支付和成本信息字段 ===
+		"ALTER TABLE expense_bills ADD COLUMN payment_type TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN start_time TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN end_time TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN business_id TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN cost_price REAL",
+		"ALTER TABLE expense_bills ADD COLUMN cost_unit TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN usage_count REAL",
+		"ALTER TABLE expense_bills ADD COLUMN usage_exempt REAL",
+		"ALTER TABLE expense_bills ADD COLUMN usage_unit TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN currency TEXT DEFAULT 'CNY'",
+		
+		// === 金额信息字段 ===
+		"ALTER TABLE expense_bills ADD COLUMN settlement_amount REAL",
+		"ALTER TABLE expense_bills ADD COLUMN gift_deduct_amount REAL DEFAULT 0",
+		"ALTER TABLE expense_bills ADD COLUMN due_amount REAL",
+		"ALTER TABLE expense_bills ADD COLUMN paid_amount REAL DEFAULT 0",
+		"ALTER TABLE expense_bills ADD COLUMN unpaid_amount REAL DEFAULT 0",
+		"ALTER TABLE expense_bills ADD COLUMN billing_status TEXT DEFAULT 'unpaid'",
+		"ALTER TABLE expense_bills ADD COLUMN invoicing_amount REAL DEFAULT 0",
+		"ALTER TABLE expense_bills ADD COLUMN invoiced_amount REAL DEFAULT 0",
+		
+		// === Token业务字段 ===
+		"ALTER TABLE expense_bills ADD COLUMN token_account_id TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN token_resource_no TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN token_resource_name TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN deduct_usage REAL DEFAULT 0",
+		"ALTER TABLE expense_bills ADD COLUMN deduct_after TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN token_type TEXT",
+	}
+
+	for _, migration := range migrations {
+		_, err := db.DB.Exec(migration)
+		if err != nil {
+			// Ignore "duplicate column name" errors for existing databases
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				log.Printf("Migration failed (continuing anyway): %s - %v", migration, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// createIndexes creates database indexes for better performance
+func (db *Database) createIndexes() error {
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_expense_bills_transaction_time ON expense_bills(transaction_time)",
 		"CREATE INDEX IF NOT EXISTS idx_expense_bills_billing_no ON expense_bills(billing_no)",
 		"CREATE INDEX IF NOT EXISTS idx_expense_bills_model_name ON expense_bills(model_name)",
 		"CREATE INDEX IF NOT EXISTS idx_expense_bills_charge_type ON expense_bills(charge_type)",
+		"CREATE INDEX IF NOT EXISTS idx_expense_bills_api_key ON expense_bills(api_key)",
+		"CREATE INDEX IF NOT EXISTS idx_expense_bills_payment_type ON expense_bills(payment_type)",
+		"CREATE INDEX IF NOT EXISTS idx_expense_bills_billing_status ON expense_bills(billing_status)",
+		"CREATE INDEX IF NOT EXISTS idx_expense_bills_token_account_id ON expense_bills(token_account_id)",
 		"CREATE INDEX IF NOT EXISTS idx_sync_history_start_time ON sync_history(start_time)",
 		"CREATE INDEX IF NOT EXISTS idx_api_tokens_is_active ON api_tokens(is_active)",
 	}

@@ -191,3 +191,4 @@ func (a *App) GetDatabaseInfo() (map[string]interface{}, error) {
 func (a *App) CheckAPIConnectivity() (map[string]interface{}, error) {
 	return a.apiService.CheckAPIConnectivity()
 }
+
