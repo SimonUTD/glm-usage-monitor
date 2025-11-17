@@ -188,7 +188,7 @@ const handleVerify = async () => {
     const result = await api.verifyToken(cleanedToken)
     if (result.success) {
       // 验证通过，保存到数据库
-      const saveResult = await api.saveToken('智谱AI API Token', cleanedToken)
+      const saveResult = await api.saveToken(cleanedToken)
       if (saveResult.success) {
         verificationResult.value = {
           success: true,

@@ -60,8 +60,10 @@ export default {
   // 账单同步
   async syncBills(billingMonth, type = 'full') {
     try {
+      // 从 billingMonth 解析年份和月份，格式为 "YYYY-MM"
+      const [year, month] = billingMonth.split('-').map(Number)
       // Wails SyncBills 方法返回同步进度和状态
-      const result = await SyncBills(billingMonth, type)
+      const result = await SyncBills(year, month)
       return handleWailsSuccess(result, '同步已启动')
     } catch (error) {
       return handleWailsError(error)
@@ -137,10 +139,8 @@ export default {
           startDate = new Date(now.getTime() - 5 * 60 * 60 * 1000)
       }
 
-      const endDate = now.toISOString().split('T')[0] // YYYY-MM-DD format
-      const start = startDate.toISOString().split('T')[0]
-
-      const result = await GetStats(start, endDate)
+      // GetStats 期望 time.Time 指针，不能直接传字符串
+      const result = await GetStats(startDate, now)
       return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
@@ -193,7 +193,8 @@ export default {
   // Token 管理
   async saveToken(token, description = '') {
     try {
-      await SaveToken(token, description)
+      // 后端期望 (tokenName, tokenValue)
+      await SaveToken('default', token)
       return handleWailsSuccess(null, 'Token 保存成功')
     } catch (error) {
       return handleWailsError(error)
@@ -203,7 +204,12 @@ export default {
   async getToken() {
     try {
       const result = await GetToken()
-      return handleWailsSuccess(result)
+      // 将 APIToken 对象转换为前端期望的格式
+      if (result) {
+        return handleWailsSuccess({ token: result.token_value }, 'Token获取成功')
+      } else {
+        return handleWailsSuccess(null, '未找到Token')
+      }
     } catch (error) {
       return handleWailsError(error)
     }
@@ -399,8 +405,8 @@ export default {
   // 占位符方法 - 需要根据实际业务逻辑实现
   async getCurrentMembershipTier() {
     try {
-      const result = await GetStats(new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0], new Date().toISOString().split('T')[0])
-      return handleWailsSuccess(result?.membership_tier || 'free')
+      const result = await GetStats(new Date(Date.now() - 24*60*60*1000), new Date())
+      return handleWailsSuccess(result?.membership_info?.tier_name || 'free')
     } catch (error) {
       return handleWailsError(error)
     }
