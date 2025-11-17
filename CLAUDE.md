@@ -230,3 +230,4 @@ wails build -platform windows/darwin -amd64  # 跨平台构建
 - 使用 `wails dev` 进行开发调试
 - 浏览器开发者工具调试前端（http://localhost:34115）
 - 查看 Wails 日志输出定位后端问题
+- 注意 `wails dev` 无法代替 `wails build`，因为wails的特殊性，其runtime必须通过`wails build`后才能正常测试。你应通过`wails build`生成可执行文件，然后请求用户进行测试并反馈相关信息
