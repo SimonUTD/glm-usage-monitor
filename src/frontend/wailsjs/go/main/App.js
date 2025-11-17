@@ -102,6 +102,10 @@ export function SyncRecentMonths(arg1) {
   return window['go']['main']['App']['SyncRecentMonths'](arg1);
 }
 
+export function ValidateSavedToken() {
+  return window['go']['main']['App']['ValidateSavedToken']();
+}
+
 export function ValidateToken(arg1) {
   return window['go']['main']['App']['ValidateToken'](arg1);
 }

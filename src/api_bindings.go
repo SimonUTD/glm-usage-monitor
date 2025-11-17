@@ -82,6 +82,11 @@ func (a *App) ValidateToken(token string) error {
 	return a.apiService.ValidateToken(token)
 }
 
+// ValidateSavedToken validates the currently saved API token
+func (a *App) ValidateSavedToken() (bool, error) {
+	return a.apiService.ValidateSavedToken()
+}
+
 // ========== Sync Management API Bindings ==========
 
 // GetSyncStatus retrieves current sync status

@@ -141,15 +141,15 @@ const form = ref({
 const steps = [
   {
     title: '配置API Token',
-    description: '请输入您的智谱AI API Token'
+    description: '请输入您的智谱AI API Token（系统会自动清理空格和格式问题）'
   },
   {
     title: '接口验证',
-    description: '系统将验证Token是否有效，验证通过后才会保存到数据库'
+    description: '系统将验证Token是否有效，验证通过后自动保存到数据库'
   },
   {
     title: '完成配置',
-    description: 'Token配置完成，可以开始使用系统功能'
+    description: 'Token配置完成，下次启动应用将自动验证并直接进入统计页面'
   }
 ]
 
@@ -161,8 +161,12 @@ const handleSaveToken = async () => {
 
   saving.value = true
   try {
+    // 清理用户输入的Token
+    const cleanedToken = cleanTokenInput(form.value.token)
+    form.value.token = cleanedToken
+
     // 临时保存到localStorage，不验证
-    localStorage.setItem('api_token', form.value.token)
+    localStorage.setItem('api_token', cleanedToken)
     ElMessage.success('请进行Token验证')
     currentStep.value = 1
   } catch (error) {
@@ -177,10 +181,14 @@ const handleVerify = async () => {
   verificationResult.value = null
 
   try {
-    const result = await api.verifyToken(form.value.token)
+    // 再次清理Token，确保格式正确
+    const cleanedToken = cleanTokenInput(form.value.token)
+    form.value.token = cleanedToken
+
+    const result = await api.verifyToken(cleanedToken)
     if (result.success) {
       // 验证通过，保存到数据库
-      const saveResult = await api.saveToken(form.value.token)
+      const saveResult = await api.saveToken('智谱AI API Token', cleanedToken)
       if (saveResult.success) {
         verificationResult.value = {
           success: true,
@@ -223,6 +231,19 @@ const handleVerify = async () => {
 const handlePrevStep = () => {
   verificationResult.value = null
   currentStep.value = 0
+}
+
+// 清理用户输入的Token
+const cleanTokenInput = (token) => {
+  if (!token || typeof token !== 'string') {
+    return ''
+  }
+
+  return token
+    .trim()                    // 移除首尾空白字符
+    .replace(/^Bearer\s+/i, '') // 移除可能的 Bearer 前缀
+    .replace(/\s+/g, '')        // 移除所有中间空白字符
+    .replace(/[\r\n\t]/g, '')   // 移除换行符和制表符
 }
 
 const handleComplete = () => {

@@ -12,6 +12,7 @@ import {
   GetToken,
   DeleteToken,
   ValidateToken,
+  ValidateSavedToken,
   GetAllTokens,
   GetConfig,
   SetConfig,
@@ -230,6 +231,15 @@ export default {
     try {
       const result = await ValidateToken(token)
       return handleWailsSuccess(result, 'Token 验证完成')
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  async validateSavedToken() {
+    try {
+      const result = await ValidateSavedToken()
+      return handleWailsSuccess(result, '保存的Token验证完成')
     } catch (error) {
       return handleWailsError(error)
     }

@@ -50,14 +50,21 @@ const router = createRouter({
 import api from '../api'
 
 router.beforeEach(async (to, from, next) => {
-  // 访问根路径时，检查数据库中是否有Token
+  // 访问根路径时，检查并验证数据库中的Token
   if (to.path === '/') {
     try {
       const result = await api.getToken()
-      if (result.success && result.data && result.data.token) {
-        // 数据库中有Token，保存到localStorage并跳转到统计页
-        localStorage.setItem('api_token', result.data.token)
-        return next('/stats')
+      if (result.success && result.data && result.data.token_value) {
+        // 数据库中有Token，验证Token是否有效
+        const validation = await api.validateSavedToken()
+        if (validation.success && validation.data) {
+          // Token有效，保存到localStorage并跳转到统计页
+          localStorage.setItem('api_token', result.data.token_value)
+          return next('/stats')
+        } else {
+          // Token无效，跳转到引导页让用户重新输入
+          return next('/onboarding')
+        }
       } else {
         // 数据库中没有Token，跳转到引导页
         return next('/onboarding')
@@ -77,7 +84,7 @@ router.beforeEach(async (to, from, next) => {
   // 检查是否已配置智谱AI Token
   try {
     const result = await api.getToken()
-    if (result.success && result.data && result.data.token) {
+    if (result.success && result.data && result.data.token_value) {
       // 已配置Token，允许访问
       return next()
     }

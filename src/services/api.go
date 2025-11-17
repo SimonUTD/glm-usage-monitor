@@ -253,6 +253,30 @@ func (s *APIService) ValidateToken(token string) error {
 	return nil
 }
 
+// ValidateSavedToken validates the currently saved API token
+func (s *APIService) ValidateSavedToken() (bool, error) {
+	token, err := s.GetToken()
+	if err != nil {
+		return false, fmt.Errorf("failed to get saved token: %w", err)
+	}
+
+	if token == nil || token.TokenValue == "" {
+		return false, nil // No token saved
+	}
+
+	err = s.ValidateToken(token.TokenValue)
+	if err != nil {
+		return false, nil // Token is invalid, but don't return error to caller
+	}
+
+	// Update Zhipu API service if validation successful
+	if s.zhipuAPIService == nil {
+		s.zhipuAPIService = NewZhipuAPIService(token.TokenValue)
+	}
+
+	return true, nil
+}
+
 // ========== Sync Management APIs ==========
 
 // GetSyncStatus retrieves current sync status

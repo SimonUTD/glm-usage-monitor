@@ -329,14 +329,33 @@ func (s *DatabaseService) GetExpenseBillsByBillingNo(billingNo string) ([]models
 
 // SaveAPIToken saves an API token
 func (s *DatabaseService) SaveAPIToken(token *models.APIToken) error {
+	// Start transaction
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Set all existing tokens to inactive
+	_, err = tx.Exec("UPDATE api_tokens SET is_active = 0")
+	if err != nil {
+		return fmt.Errorf("failed to deactivate existing tokens: %w", err)
+	}
+
+	// Insert new token as active
 	query := `
-		INSERT OR REPLACE INTO api_tokens (token_name, token_value, is_active, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO api_tokens (token_name, token_value, is_active, created_at, updated_at)
+		VALUES (?, ?, 1, ?, ?)
 	`
 
-	_, err := s.db.Exec(query, token.TokenName, token.TokenValue, token.IsActive, token.CreatedAt, token.UpdatedAt)
+	_, err = tx.Exec(query, token.TokenName, token.TokenValue, token.CreatedAt, token.UpdatedAt)
 	if err != nil {
-		return fmt.Errorf("failed to save API token: %w", err)
+		return fmt.Errorf("failed to save new API token: %w", err)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil

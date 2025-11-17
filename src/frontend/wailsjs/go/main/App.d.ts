@@ -55,4 +55,6 @@ export function SyncBills(arg1:number,arg2:number):Promise<services.SyncResult>;
 
 export function SyncRecentMonths(arg1:number):Promise<Array<services.SyncResult>>;
 
+export function ValidateSavedToken():Promise<boolean>;
+
 export function ValidateToken(arg1:string):Promise<void>;
