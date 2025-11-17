@@ -330,12 +330,8 @@ func (s *DatabaseService) GetExpenseBillsByBillingNo(billingNo string) ([]models
 // SaveAPIToken saves an API token
 func (s *DatabaseService) SaveAPIToken(token *models.APIToken) error {
 	query := `
-		INSERT INTO api_tokens (token_name, token_value, is_active, created_at, updated_at)
+		INSERT OR REPLACE INTO api_tokens (token_name, token_value, is_active, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(token_name) DO UPDATE SET
-			token_value = excluded.token_value,
-			is_active = excluded.is_active,
-			updated_at = excluded.updated_at
 	`
 
 	_, err := s.db.Exec(query, token.TokenName, token.TokenValue, token.IsActive, token.CreatedAt, token.UpdatedAt)
