@@ -101,6 +101,12 @@ type AutoSyncConfig struct {
 	ConfigValue string    `json:"config_value" db:"config_value"`
 	Description *string   `json:"description" db:"description"`
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	
+	// 以下字段用于前端API响应，不存储在数据库中
+	Enabled          bool   `json:"enabled"`
+	FrequencySeconds int    `json:"frequency_seconds"`
+	LastSyncTime     string `json:"last_sync_time,omitempty"`
+	NextSyncTime     string `json:"next_sync_time,omitempty"`
 }
 
 // MembershipTierLimit represents the membership_tier_limits table structure

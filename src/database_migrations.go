@@ -95,6 +95,15 @@ func GetMigrations() []MigrationScript {
 				ALTER TABLE auto_sync_config_v2 RENAME TO auto_sync_config;
 			`,
 		},
+		{
+			Version: 4,
+			Description: "为同步历史表添加复合索引以优化分页查询性能",
+			SQL: `
+				-- 为sync_history表添加复合索引
+				CREATE INDEX IF NOT EXISTS idx_sync_history_type_start_time ON sync_history(sync_type, start_time DESC);
+				CREATE INDEX IF NOT EXISTS idx_sync_history_status ON sync_history(status);
+			`,
+		},
 	}
 }
 

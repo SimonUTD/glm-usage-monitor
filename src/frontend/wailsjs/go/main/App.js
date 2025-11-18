@@ -38,6 +38,14 @@ export function GetApiUsageProgress() {
   return window['go']['main']['App']['GetApiUsageProgress']();
 }
 
+export function GetAutoSyncConfig() {
+  return window['go']['main']['App']['GetAutoSyncConfig']();
+}
+
+export function GetAutoSyncStatus() {
+  return window['go']['main']['App']['GetAutoSyncStatus']();
+}
+
 export function GetBillByID(arg1) {
   return window['go']['main']['App']['GetBillByID'](arg1);
 }
@@ -110,6 +118,10 @@ export function GetMonthlyUsage() {
   return window['go']['main']['App']['GetMonthlyUsage']();
 }
 
+export function GetProductNames() {
+  return window['go']['main']['App']['GetProductNames']();
+}
+
 export function GetProducts() {
   return window['go']['main']['App']['GetProducts']();
 }
@@ -170,6 +182,10 @@ export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
 
+export function SaveAutoSyncConfig(arg1) {
+  return window['go']['main']['App']['SaveAutoSyncConfig'](arg1);
+}
+
 export function SaveToken(arg1, arg2) {
   return window['go']['main']['App']['SaveToken'](arg1, arg2);
 }
@@ -192,6 +208,10 @@ export function SyncBills(arg1, arg2) {
 
 export function SyncRecentMonths(arg1) {
   return window['go']['main']['App']['SyncRecentMonths'](arg1);
+}
+
+export function TriggerAutoSync() {
+  return window['go']['main']['App']['TriggerAutoSync']();
 }
 
 export function ValidateSavedToken() {

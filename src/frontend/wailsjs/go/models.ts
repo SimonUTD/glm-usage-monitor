@@ -82,6 +82,10 @@ export namespace models {
 	    config_value: string;
 	    description?: string;
 	    updated_at: time.Time;
+	    enabled: boolean;
+	    frequency_seconds: number;
+	    last_sync_time?: string;
+	    next_sync_time?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AutoSyncConfig(source);
@@ -94,6 +98,10 @@ export namespace models {
 	        this.config_value = source["config_value"];
 	        this.description = source["description"];
 	        this.updated_at = this.convertValues(source["updated_at"], time.Time);
+	        this.enabled = source["enabled"];
+	        this.frequency_seconds = source["frequency_seconds"];
+	        this.last_sync_time = source["last_sync_time"];
+	        this.next_sync_time = source["next_sync_time"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

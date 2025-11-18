@@ -100,20 +100,29 @@
               </el-form>
             </div>
 
-            <el-alert
-              v-if="incrementalSyncing"
-              type="info"
-              :closable="false"
-              show-icon
-              class="sync-alert"
-            >
-              <template #title>
-                <div class="sync-alert-content">
-                  <el-icon class="rotating"><Loading /></el-icon>
-                  <span>正在同步数据，请稍候...</span>
-                </div>
-              </template>
-            </el-alert>
+            <!-- 增量同步进度条 -->
+            <div v-if="incrementalSyncing" class="progress-container">
+              <div class="progress-header">
+                <span class="progress-stage">{{ incrementalProgress.stage }}</span>
+                <span class="progress-percentage">
+                  {{ incrementalProgress.total > 0 && incrementalProgress.current > 0 ? Math.floor((incrementalProgress.current / incrementalProgress.total) * 100) : incrementalProgress.percentage }}%
+                </span>
+              </div>
+              <el-progress
+                :percentage="incrementalProgress.total > 0 ? Math.floor((incrementalProgress.current / incrementalProgress.total) * 100) : incrementalProgress.percentage"
+                :stroke-width="10"
+                color="#4D6782"
+                :show-text="false"
+              />
+              <div class="progress-details">
+                <span v-if="incrementalProgress.total > 0">
+                  第 {{ incrementalProgress.current }}/{{ incrementalProgress.total }} 页 (已处理 {{ incrementalProgress.syncedCount }} 条记录)
+                </span>
+                <span v-else>
+                  {{ incrementalProgress.percentage }}%
+                </span>
+              </div>
+            </div>
 
             <!-- 增量同步历史记录 -->
             <div class="history-section">
@@ -353,6 +362,15 @@ const progress = ref({
 })
 let progressTimer = null
 
+// 增量同步进度数据
+const incrementalProgress = ref({
+  percentage: 0,
+  current: 0,
+  total: 0,
+  stage: '正在准备增量同步...',
+  syncedCount: 0
+})
+
 // 同步历史记录
 const incrementalHistory = ref([])
 const fullHistory = ref([])
@@ -413,6 +431,15 @@ const handleIncrementalSync = async () => {
     const result = await api.startSync(getCurrentMonth())
 
     if (result.success) {
+      // 重置增量同步进度状态
+      incrementalProgress.value = {
+        percentage: 0,
+        current: 0,
+        total: 0,
+        stage: result.message || '增量同步任务已启动，正在准备...',
+        syncedCount: 0
+      }
+
       ElMessage.success(result.message || '增量数据同步已启动')
 
       // 启动异步轮询来跟踪同步状态
@@ -511,23 +538,53 @@ const handleFullSync = async () => {
 
 // 增量同步状态轮询
 let incrementalProgressTimer = null
+let incrementalRetryCount = 0
+const INCREMENTAL_MAX_RETRIES = 5
+const INCREMENTAL_TIMEOUT = 600000 // 10分钟超时
 
 const startIncrementalSyncPolling = () => {
+  incrementalRetryCount = 0
+  const startTime = Date.now()
+
   incrementalProgressTimer = setInterval(async () => {
     try {
+      // 检查超时
+      if (Date.now() - startTime > INCREMENTAL_TIMEOUT) {
+        incrementalSyncing.value = false
+        stopIncrementalSyncPolling()
+        ElMessage.error('增量同步超时，请检查网络连接或重新尝试')
+        return
+      }
+
       const result = await api.getSyncStatus()
       if (result.success) {
-        if (!result.data.syncing) {
+        const syncData = result.data
+
+        // 更新增量同步进度信息
+        if (syncData.current_page !== undefined && syncData.total_pages !== undefined) {
+          incrementalProgress.value = {
+            percentage: syncData.progress || 0,
+            current: syncData.current_page,
+            total: syncData.total_pages,
+            stage: syncData.message || '正在同步增量数据...',
+            syncedCount: syncData.synced_count || 0
+          }
+        }
+
+        // 重置重试计数
+        incrementalRetryCount = 0
+
+        // 检查同步是否完成
+        if (!syncData.syncing) {
           // 同步完成
           incrementalSyncing.value = false
           stopIncrementalSyncPolling()
 
-          if (result.data.result) {
-            if (result.data.result.success) {
-              ElMessage.success('增量数据同步完成')
-            } else {
-              ElMessage.error('同步失败：' + (result.data.result.message || '未知错误'))
-            }
+          // 显示同步结果
+          if (syncData.status === 'completed' || syncData.status === 'success') {
+            ElMessage.success('增量数据同步完成')
+          } else if (syncData.status === 'failed') {
+            ElMessage.error('同步失败：' + (syncData.message || '未知错误'))
           } else {
             ElMessage.success('增量数据同步完成')
           }
@@ -538,6 +595,16 @@ const startIncrementalSyncPolling = () => {
       }
     } catch (error) {
       console.error('获取增量同步进度失败：', error)
+      incrementalRetryCount++
+      
+      // 增加错误重试机制
+      if (incrementalRetryCount >= INCREMENTAL_MAX_RETRIES) {
+        incrementalSyncing.value = false
+        stopIncrementalSyncPolling()
+        ElMessage.error('连续获取同步状态失败，请检查网络连接')
+      } else {
+        incrementalProgress.value.stage = `获取进度信息失败，正在重试... (${incrementalRetryCount}/${INCREMENTAL_MAX_RETRIES})`
+      }
     }
   }, 1000)
 }
@@ -546,26 +613,47 @@ const stopIncrementalSyncPolling = () => {
   if (incrementalProgressTimer) {
     clearInterval(incrementalProgressTimer)
     incrementalProgressTimer = null
+    incrementalRetryCount = 0
   }
 }
 
+// 全量同步状态轮询变量
+let fullSyncRetryCount = 0
+const FULL_SYNC_MAX_RETRIES = 5
+const FULL_SYNC_TIMEOUT = 600000 // 10分钟超时
+
 // 开始轮询同步进度
 const startProgressPolling = () => {
+  fullSyncRetryCount = 0
+  const startTime = Date.now()
+
   progressTimer = setInterval(async () => {
     try {
+      // 检查超时
+      if (Date.now() - startTime > FULL_SYNC_TIMEOUT) {
+        fullSyncing.value = false
+        stopProgressPolling()
+        ElMessage.error('同步超时，请检查网络连接或重新尝试')
+        return
+      }
+
       const result = await api.getSyncStatus()
       if (result.success) {
         const syncData = result.data
 
         // 更新进度信息
-        if (syncData.progress) {
+        if (syncData.current_page !== undefined && syncData.total_pages !== undefined) {
           progress.value = {
             percentage: syncData.progress || 0,
-            current: syncData.syncedItems || 0,
-            total: syncData.totalItems || 0,
-            stage: syncData.message || 'processing'
+            current: syncData.current_page,
+            total: syncData.total_pages,
+            stage: syncData.message || '正在同步数据...',
+            syncedCount: syncData.synced_count || 0
           }
         }
+
+        // 重置重试计数
+        fullSyncRetryCount = 0
 
         // 检查同步是否完成
         if (!syncData.syncing) {
@@ -587,6 +675,16 @@ const startProgressPolling = () => {
       }
     } catch (error) {
       console.error('获取同步进度失败：', error)
+      fullSyncRetryCount++
+      
+      // 增加错误重试机制
+      if (fullSyncRetryCount >= FULL_SYNC_MAX_RETRIES) {
+        fullSyncing.value = false
+        stopProgressPolling()
+        ElMessage.error('连续获取同步状态失败，请检查网络连接')
+      } else {
+        progress.value.stage = `获取进度信息失败，正在重试... (${fullSyncRetryCount}/${FULL_SYNC_MAX_RETRIES})`
+      }
     }
   }, 1000)
 }
@@ -596,6 +694,7 @@ const stopProgressPolling = () => {
   if (progressTimer) {
     clearInterval(progressTimer)
     progressTimer = null
+    fullSyncRetryCount = 0
   }
 }
 

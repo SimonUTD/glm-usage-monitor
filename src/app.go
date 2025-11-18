@@ -7,7 +7,6 @@ import (
 	"math"
 	"glm-usage-monitor/services"
 	"glm-usage-monitor/models"
-	"time"
 )
 
 // App struct
@@ -497,25 +496,43 @@ func (a *App) GetCurrentMembershipTier() (map[string]interface{}, error) {
 	return result, nil
 }
 
-// GetProducts returns the list of available products
+// GetProducts returns the list of available products (保持兼容性)
 func (a *App) GetProducts() ([]string, error) {
-	// Get model distribution for recent data
-	startDate := time.Now().AddDate(0, 0, -1)
-	endDate := time.Now()
+	return a.GetProductNames()
+}
 
-	distribution, err := a.apiService.GetModelDistribution(&startDate, &endDate)
+// GetProductNames returns the list of product names (新的专用方法)
+func (a *App) GetProductNames() ([]string, error) {
+	// 从数据库获取产品名称列表
+	db := a.database.GetDB()
+	
+	query := `
+		SELECT DISTINCT model_product_name 
+		FROM expense_bills 
+		WHERE model_product_name IS NOT NULL 
+		  AND model_product_name != ''
+		ORDER BY model_product_name
+	`
+	
+	rows, err := db.Query(query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get product names: %w", err)
 	}
-
-	var products []string
-	for _, data := range distribution {
-		products = append(products, data.ModelName)
+	defer rows.Close()
+	
+	var productNames []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			log.Printf("Error scanning product name: %v", err)
+			continue
+		}
+		productNames = append(productNames, name)
 	}
-
-	if len(products) == 0 {
-		// Return default products if no data found
-		products = []string{
+	
+	// 如果没有数据，返回默认产品列表
+	if len(productNames) == 0 {
+		productNames = []string{
 			"glm-4.5-air 0-32k 0-0.2k",
 			"glm-4.5-air 0-32k 0.2k+",
 			"glm-4.5-air 32-128k",
@@ -524,8 +541,8 @@ func (a *App) GetProducts() ([]string, error) {
 			"glm-4.6 32-200k",
 		}
 	}
-
-	return products, nil
+	
+	return productNames, nil
 }
 
 // GetBillsCount returns the total count of bills and whether there's any data
@@ -632,6 +649,48 @@ func (a *App) StartSync(billingMonth string) (*services.StartSyncResponse, error
 // GetSyncStatusAsync 获取异步同步状态
 func (a *App) GetSyncStatusAsync() (*services.SyncStatusResponse, error) {
 	return a.apiService.GetSyncStatus()
+}
+
+// ========== 自动同步API方法 ==========
+
+// GetAutoSyncConfig 获取自动同步配置
+func (a *App) GetAutoSyncConfig() (*models.AutoSyncConfig, error) {
+	return a.apiService.GetAutoSyncConfig()
+}
+
+// SaveAutoSyncConfig 保存自动同步配置
+func (a *App) SaveAutoSyncConfig(config *models.AutoSyncConfig) error {
+	return a.apiService.SaveAutoSyncConfig(config)
+}
+
+// TriggerAutoSync 立即触发一次自动同步
+func (a *App) TriggerAutoSync() (map[string]interface{}, error) {
+	err := a.apiService.TriggerAutoSync()
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "触发自动同步失败: " + err.Error(),
+		}, err
+	}
+	
+	return map[string]interface{}{
+		"success": true,
+		"message": "自动同步已触发",
+	}, nil
+}
+
+// GetAutoSyncStatus 获取自动同步状态
+func (a *App) GetAutoSyncStatus() (map[string]interface{}, error) {
+	status, err := a.apiService.GetAutoSyncStatus()
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "获取自动同步状态失败: " + err.Error(),
+		}, err
+	}
+	
+	status["success"] = true
+	return status, nil
 }
 
 

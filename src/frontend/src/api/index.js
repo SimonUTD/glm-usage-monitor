@@ -29,7 +29,13 @@ import {
   ForceResetSyncStatus,
   GetApiUsageProgress,
   GetTokenUsageProgress,
-  GetTotalCostProgress
+  GetTotalCostProgress,
+  GetAutoSyncConfig,
+  SaveAutoSyncConfig,
+  TriggerAutoSync,
+  StopAutoSync,
+  GetAutoSyncStatus,
+  GetProductNames
 } from '../../wailsjs/go/main/App'
 
 /**
@@ -37,19 +43,21 @@ import {
  * 保持与原有 API 接口的兼容性，最小化对前端组件的影响
  */
 
-// 错误处理函数 - 将 Go 错误转换为前端期望的格式
-const handleWailsError = (error) => {
-  if (typeof error === 'string') {
-    return {
-      success: false,
-      message: error,
-      data: null
-    }
-  }
+// 错误处理函数 - 增强版，使用新的错误处理器
+import { handleError, ErrorTypes } from '@/utils/errorHandler'
+
+const handleWailsError = (error, context = {}) => {
+  // 使用新的错误处理器处理错误
+  const errorInfo = handleError(error, {
+    operation: 'wails_api_call',
+    ...context
+  })
+
   return {
     success: false,
-    message: error?.message || '操作失败',
-    data: null
+    message: errorInfo.message,
+    data: null,
+    errorInfo: errorInfo // 保留完整的错误信息供调试使用
   }
 }
 
@@ -71,10 +79,18 @@ export default {
       if (result.success) {
         return handleWailsSuccess(result, result.message || '同步任务已启动')
       } else {
-        return handleWailsError(new Error(result.message || '同步启动失败'))
+        return handleWailsError(new Error(result.message || '同步启动失败'), {
+          operation: 'startSync',
+          billingMonth,
+          apiResponse: result
+        })
       }
     } catch (error) {
-      return handleWailsError(error)
+      return handleWailsError(error, {
+        operation: 'startSync',
+        billingMonth,
+        errorPhase: 'wails_api_call'
+      })
     }
   },
 
@@ -417,13 +433,12 @@ export default {
     }
   },
 
-  // 以下方法是为了兼容性保留的包装器，可能需要根据实际需求调整
+  // 获取产品名称列表（修复方案A：修改后端返回格式）
   async getProducts() {
     try {
-      const startDate = new Date(Date.now() - 24*60*60*1000)
-      const endDate = new Date()
-      const result = await GetModelDistribution(startDate, endDate)
-      return handleWailsSuccess(result?.models || [])
+      // 直接调用新的GetProductNames方法
+      const result = await GetProductNames()
+      return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
     }
@@ -509,6 +524,58 @@ export default {
     try {
       const result = await ForceResetSyncStatus()
       return handleWailsSuccess(result, result.message || '同步状态已重置')
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  // ========== 自动同步相关方法 ==========
+
+  // 获取自动同步配置
+  async getAutoSyncConfig() {
+    try {
+      const result = await GetAutoSyncConfig()
+      return handleWailsSuccess(result)
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  // 保存自动同步配置
+  async saveAutoSyncConfig(config) {
+    try {
+      await SaveAutoSyncConfig(config)
+      return handleWailsSuccess(null, '自动同步配置已保存')
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  // 触发一次自动同步
+  async triggerAutoSync() {
+    try {
+      const result = await TriggerAutoSync()
+      return handleWailsSuccess(result, result.message || '自动同步已触发')
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  // 停止自动同步
+  async stopAutoSync() {
+    try {
+      const result = await StopAutoSync()
+      return handleWailsSuccess(result, result.message || '自动同步已停止')
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  // 获取自动同步状态
+  async getAutoSyncStatus() {
+    try {
+      const result = await GetAutoSyncStatus()
+      return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
     }

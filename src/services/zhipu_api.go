@@ -12,9 +12,10 @@ import (
 
 // ZhipuAPIService provides integration with Zhipu AI API
 type ZhipuAPIService struct {
-	baseURL    string
-	httpClient *http.Client
-	apiToken   string
+	baseURL      string
+	httpClient   *http.Client
+	apiToken     string
+	errorHandler ErrorHandler
 }
 
 // NewZhipuAPIService creates a new Zhipu API service
@@ -24,7 +25,8 @@ func NewZhipuAPIService(apiToken string) *ZhipuAPIService {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		apiToken: apiToken,
+		apiToken:     apiToken,
+		errorHandler: NewErrorHandler(),
 	}
 }
 
@@ -181,20 +183,54 @@ func (s *ZhipuAPIService) GetBillingData(request *BillingRequest) (*BillingRespo
 
 // ValidateAPIToken validates the API token by making a test request
 func (s *ZhipuAPIService) ValidateAPIToken() error {
+	// 验证API令牌是否为空
 	if s.apiToken == "" {
-		return fmt.Errorf("API token is empty")
+		err := NewAuthError(ErrCodeInvalidToken, "API token is empty")
+		s.errorHandler.HandleError(err, map[string]interface{}{
+			"operation": "ValidateAPIToken",
+		})
+		return err
 	}
 
-	// Make a test request with minimal parameters
-	request := &BillingRequest{
-		BillingMonth: time.Now().Format("2006-01"),
-		PageNum:      1,
-		PageSize:     1,
-	}
+	// 使用重试机制进行测试请求
+	var validationErr error
+	err := RetryWithBackUp(DefaultRetryConfig, func() error {
+		// 创建测试请求
+		request := &BillingRequest{
+			BillingMonth: time.Now().Format("2006-01"),
+			PageNum:      1,
+			PageSize:     1,
+		}
 
-	_, err := s.GetBillingData(request)
+		var apiErr error
+		_, apiErr = s.GetBillingData(request)
+		if apiErr != nil {
+			validationErr = WrapError(apiErr, ErrorTypeAPI, ErrCodeAPIUnauthorized, "API token validation failed")
+			return validationErr
+		}
+		return nil
+	})
+
 	if err != nil {
-		return fmt.Errorf("API token validation failed: %w", err)
+		// 增强错误信息
+		if validationErr != nil {
+			validationErr = validationErr.(*AppError).WithContext("operation", "ValidateAPIToken").
+				WithContext("timestamp", time.Now()).
+				WithDetails("Failed to validate API token with test request")
+			s.errorHandler.HandleError(validationErr, map[string]interface{}{
+				"operation": "ValidateAPIToken",
+				"retries":   DefaultRetryConfig.MaxRetries,
+			})
+			return validationErr
+		}
+
+		fallbackErr := NewInternalError(ErrCodeInternalError, "API token validation failed with unknown error").
+			WithCause(err).
+			WithDetails("Unknown error during token validation")
+		s.errorHandler.HandleError(fallbackErr, map[string]interface{}{
+			"operation": "ValidateAPIToken",
+		})
+		return fallbackErr
 	}
 
 	return nil

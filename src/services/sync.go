@@ -52,24 +52,7 @@ func (s *DatabaseService) UpdateSyncHistory(id int, history *models.SyncHistory)
 
 // GetSyncHistory retrieves sync history with pagination and optional sync type filtering
 func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int) (*models.PaginatedResult, error) {
-	// Build WHERE clause
-	whereClause := "1=1"
-	args := []interface{}{}
-	
-	if syncType != "" {
-		whereClause += " AND sync_type = ?"
-		args = append(args, syncType)
-	}
-
-	// Count total records
-	var total int
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM sync_history WHERE %s", whereClause)
-	err := s.db.QueryRow(countQuery, args...).Scan(&total)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count sync history: %w", err)
-	}
-
-	// Calculate pagination
+	// 参数验证和默认值
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -80,22 +63,72 @@ func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int)
 		pageNum = 1
 	}
 
+	// 构建WHERE子句和参数
+	whereClause := "1=1"
+	args := []interface{}{}
+
+	if syncType != "" {
+		whereClause += " AND sync_type = ?"
+		args = append(args, syncType)
+	}
+
+	// 优化：对于第一页，如果不需要精确总数，可以使用估算来优化性能
+	var total int
+	var err error
+
+	// 性能优化：使用索引来加速COUNT查询
+	var countQuery string
+	if syncType != "" {
+		// 如果有sync_type过滤，使用复合索引
+		countQuery = `
+			SELECT COUNT(*)
+			FROM sync_history INDEXED BY idx_sync_history_type_start_time
+			WHERE sync_type = ?
+		`
+		err = s.db.QueryRow(countQuery, syncType).Scan(&total)
+	} else {
+		// 如果没有过滤条件，直接查询全表
+		countQuery = "SELECT COUNT(*) FROM sync_history"
+		err = s.db.QueryRow(countQuery).Scan(&total)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to count sync history: %w", err)
+	}
+
+	// 计算偏移量
 	offset := (pageNum - 1) * pageSize
 
-	// Get data
+	// 优化查询：使用索引提示，确保使用复合索引
 	query := fmt.Sprintf(`
 		SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
 		       total_records, page_synced, total_pages
-		FROM sync_history
+		FROM sync_history INDEXED BY idx_sync_history_type_start_time
 		WHERE %s
 		ORDER BY start_time DESC
 		LIMIT ? OFFSET ?
 	`, whereClause)
 
-	args = append(args, pageSize, offset)
-	rows, err := s.db.Query(query, args...)
+	// 添加分页参数
+	queryArgs := make([]interface{}, len(args))
+	copy(queryArgs, args)
+	queryArgs = append(queryArgs, pageSize, offset)
+
+	rows, err := s.db.Query(query, queryArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query sync history: %w", err)
+		// 如果索引提示失败，回退到普通查询
+		query = fmt.Sprintf(`
+			SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
+			       total_records, page_synced, total_pages
+			FROM sync_history
+			WHERE %s
+			ORDER BY start_time DESC
+			LIMIT ? OFFSET ?
+		`, whereClause)
+
+		rows, err = s.db.Query(query, queryArgs...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query sync history: %w", err)
+		}
 	}
 	defer rows.Close()
 
@@ -134,10 +167,11 @@ func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int)
 
 // GetLatestSyncHistory retrieves the latest sync history record
 func (s *DatabaseService) GetLatestSyncHistory() (*models.SyncHistory, error) {
+	// 性能优化：使用索引来优化查询
 	query := `
 		SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
 		       total_records, page_synced, total_pages
-		FROM sync_history
+		FROM sync_history INDEXED BY idx_sync_history_type_start_time
 		ORDER BY start_time DESC
 		LIMIT 1
 	`
@@ -169,7 +203,8 @@ func (s *DatabaseService) GetRunningSyncCount() (int, error) {
 	}
 
 	var count int
-	err = s.db.QueryRow("SELECT COUNT(*) FROM sync_history WHERE status = 'running'").Scan(&count)
+	// 性能优化：使用status索引来加速查询
+	err = s.db.QueryRow("SELECT COUNT(*) FROM sync_history INDEXED BY idx_sync_history_status WHERE status = 'running'").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count running syncs: %w", err)
 	}

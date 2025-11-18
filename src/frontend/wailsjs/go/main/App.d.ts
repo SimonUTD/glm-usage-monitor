@@ -23,6 +23,10 @@ export function GetAllTokens():Promise<Array<models.APIToken>>;
 
 export function GetApiUsageProgress():Promise<Record<string, any>>;
 
+export function GetAutoSyncConfig():Promise<models.AutoSyncConfig>;
+
+export function GetAutoSyncStatus():Promise<Record<string, any>>;
+
 export function GetBillByID(arg1:number):Promise<models.ExpenseBill>;
 
 export function GetBills(arg1:any):Promise<models.PaginatedResult>;
@@ -59,6 +63,8 @@ export function GetMonthTotalCost():Promise<number>;
 
 export function GetMonthlyUsage():Promise<Record<string, any>>;
 
+export function GetProductNames():Promise<Array<string>>;
+
 export function GetProducts():Promise<Array<string>>;
 
 export function GetRecentUsage(arg1:number):Promise<Array<models.ExpenseBill>>;
@@ -89,6 +95,8 @@ export function GetWeekTotalCost():Promise<number>;
 
 export function Greet(arg1:string):Promise<string>;
 
+export function SaveAutoSyncConfig(arg1:models.AutoSyncConfig):Promise<void>;
+
 export function SaveToken(arg1:string,arg2:string):Promise<void>;
 
 export function SetConfig(arg1:string,arg2:string,arg3:string):Promise<void>;
@@ -100,6 +108,8 @@ export function StopAutoSync():Promise<Record<string, any>>;
 export function SyncBills(arg1:number,arg2:number):Promise<Record<string, any>>;
 
 export function SyncRecentMonths(arg1:number):Promise<Record<string, any>>;
+
+export function TriggerAutoSync():Promise<Record<string, any>>;
 
 export function ValidateSavedToken():Promise<boolean>;
 

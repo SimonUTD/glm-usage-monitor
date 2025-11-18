@@ -14,7 +14,9 @@ type APIService struct {
 	dbService        *DatabaseService
 	statsService     *StatisticsService
 	zhipuAPIService  *ZhipuAPIService
+	autoSyncService  *AutoSyncService
 	db               DatabaseInterface
+	errorHandler     ErrorHandler
 }
 
 // NewAPIService creates a new API service
@@ -22,18 +24,25 @@ func NewAPIService(db DatabaseInterface) *APIService {
 	dbService := NewDatabaseService(db.GetDB())
 	statsService := NewStatisticsService(db.GetDB())
 
-	return &APIService{
+	apiService := &APIService{
 		dbService:       dbService,
 		statsService:    statsService,
 		zhipuAPIService: nil, // Will be initialized when token is set
 		db:              db,
+		errorHandler:    NewErrorHandler(),
 	}
+
+	// 初始化自动同步服务
+	apiService.autoSyncService = NewAutoSyncService(apiService, dbService)
+
+	return apiService
 }
 
 // ========== Bill Management APIs ==========
 
 // GetBills retrieves expense bills with filtering and pagination
 func (s *APIService) GetBills(filter *models.BillFilter) (*models.PaginatedResult, error) {
+	// 参数验证
 	if filter == nil {
 		filter = &models.BillFilter{
 			PageNum:  1,
@@ -41,10 +50,28 @@ func (s *APIService) GetBills(filter *models.BillFilter) (*models.PaginatedResul
 		}
 	}
 
-	result, err := s.dbService.GetExpenseBills(filter)
+	var result *models.PaginatedResult
+
+	// 使用错误处理机制执行数据库操作
+	err := SafeExecute(func() error {
+		var operationErr error
+		result, operationErr = s.dbService.GetExpenseBills(filter)
+		return operationErr
+	})
+
 	if err != nil {
-		log.Printf("Error getting bills: %v", err)
-		return nil, fmt.Errorf("failed to retrieve bills: %w", err)
+		// 处理错误并记录上下文
+		context := map[string]interface{}{
+			"operation": "GetBills",
+			"page_num":  filter.PageNum,
+			"page_size": filter.PageSize,
+		}
+
+		s.errorHandler.HandleError(err, context)
+
+		// 返回用户友好的错误
+		appErr := WrapError(err, ErrorTypeDatabase, ErrCodeDBQueryFailed, "Failed to retrieve bills")
+		return nil, appErr
 	}
 
 	return result, nil
@@ -567,24 +594,62 @@ func getDisplayStatus(status string) string {
 
 // SyncBills starts a sync operation for billing data
 func (s *APIService) SyncBills(year, month int, progressCallback func(*SyncProgress)) (*SyncResult, error) {
-	// Check if we have an API token
-	if s.zhipuAPIService == nil {
+	// 验证输入参数
+	if year < 2020 || year > 2030 || month < 1 || month > 12 {
 		return &SyncResult{
 			Success:      false,
-			ErrorMessage: "No API token configured",
-		}, fmt.Errorf("no API token configured")
+			ErrorMessage: "Invalid year or month parameter",
+		}, NewValidationError(ErrCodeInvalidParameter, "Invalid year or month parameter")
 	}
 
-	// Check if there's already a running sync
-	runningCount, err := s.dbService.GetRunningSyncCount()
-	if err != nil {
-		return nil, fmt.Errorf("failed to check running syncs: %w", err)
-	}
-	if runningCount > 0 {
+	// 检查API令牌是否配置
+	if s.zhipuAPIService == nil {
+		err := NewAuthError(ErrCodeSyncNoToken, "No API token configured")
+		context := map[string]interface{}{
+			"operation": "SyncBills",
+			"year":      year,
+			"month":     month,
+		}
+		s.errorHandler.HandleError(err, context)
+
 		return &SyncResult{
 			Success:      false,
-			ErrorMessage: "Another sync operation is already in progress",
-		}, fmt.Errorf("sync already in progress")
+			ErrorMessage: GetErrorMessage(err),
+		}, err
+	}
+
+	// 检查是否已有同步任务在运行
+	var runningCount int
+	err := SafeExecute(func() error {
+		var operationErr error
+		runningCount, operationErr = s.dbService.GetRunningSyncCount()
+		return operationErr
+	})
+
+	if err != nil {
+		context := map[string]interface{}{
+			"operation": "CheckRunningSync",
+			"year":      year,
+			"month":     month,
+		}
+		s.errorHandler.HandleError(err, context)
+
+		dbErr := WrapError(err, ErrorTypeDatabase, ErrCodeDBQueryFailed, "Failed to check running syncs")
+		return nil, dbErr
+	}
+
+	if runningCount > 0 {
+		err := NewSyncError(ErrCodeSyncAlreadyRunning, "Another sync operation is already in progress")
+		context := map[string]interface{}{
+			"operation":    "SyncBills",
+			"runningCount": runningCount,
+		}
+		s.errorHandler.HandleError(err, context)
+
+		return &SyncResult{
+			Success:      false,
+			ErrorMessage: GetErrorMessage(err),
+		}, err
 	}
 
 	// Create sync history record
@@ -776,11 +841,75 @@ func (s *APIService) CheckAPIConnectivity() (map[string]interface{}, error) {
 
 // ========== Progress Tracking APIs ==========
 
+// GetCurrentMembershipTier 获取当前会员等级信息
+func (s *APIService) GetCurrentMembershipTier() (map[string]interface{}, error) {
+	// 获取当前会员等级
+	tier, err := s.dbService.GetCurrentMembershipTier()
+	if err != nil {
+		log.Printf("Error getting current membership tier: %v", err)
+		// 使用默认值
+		tier = "free"
+	}
+	
+	// 获取该等级的限制信息
+	limits, err := s.dbService.GetMembershipTierLimits(tier)
+	if err != nil {
+		log.Printf("Failed to get tier limits for %s: %v", tier, err)
+		// 使用默认限制
+		limits = &models.MembershipTierLimit{
+			TierName:     tier,
+			DailyLimit:   &[]int{1000}[0],
+			MonthlyLimit: &[]int{30000}[0],
+			MaxTokens:    &[]int{1000000}[0],
+		}
+	}
+	
+	result := map[string]interface{}{
+		"tier":          tier,
+		"tier_name":     getTierDisplayName(tier),
+		"daily_limit":   limits.DailyLimit,
+		"monthly_limit": limits.MonthlyLimit,
+		"max_tokens":    limits.MaxTokens,
+		"features":      limits.Features,
+		"description":   limits.Description,
+	}
+	
+	return result, nil
+}
+
+// 获取会员等级显示名称
+func getTierDisplayName(tier string) string {
+	displayNames := map[string]string{
+		"free":       "免费版",
+		"lite":       "Lite版",
+		"pro":        "Pro版",
+		"plus":       "Plus版",
+		"enterprise": "企业版",
+	}
+	
+	if name, ok := displayNames[tier]; ok {
+		return name
+	}
+	return tier
+}
+
 // GetApiUsageProgress retrieves API usage progress against limits
 func (s *APIService) GetApiUsageProgress() (map[string]interface{}, error) {
 	// Get current month's API usage
 	now := time.Now()
 	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	
+	// 获取当前会员等级信息
+	tierInfo, err := s.GetCurrentMembershipTier()
+	if err != nil {
+		log.Printf("Error getting membership tier: %v", err)
+		// 使用默认值
+		tierInfo = map[string]interface{}{
+			"tier":          "free",
+			"daily_limit":   1000,
+			"monthly_limit": 30000,
+		}
+	}
 	
 	// Get API usage count for current month
 	usageStats, err := s.statsService.GetOverallStats(&startOfMonth, &now)
@@ -789,26 +918,20 @@ func (s *APIService) GetApiUsageProgress() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get API usage stats: %w", err)
 	}
 
-	// Get membership tier limits
-	limits, err := s.dbService.GetMembershipTierLimits("free") // Default to free tier
-	if err != nil {
-		log.Printf("Error getting membership limits: %v", err)
-		// Continue with default limits
-		limits = &models.MembershipTierLimit{
-			DailyLimit:   &[]int{1000}[0],   // Default daily limit
-			MonthlyLimit: &[]int{30000}[0],  // Default monthly limit
-		}
-	}
-
 	apiUsageCount := usageStats.TotalRecords
 	dailyLimit := 1000
 	monthlyLimit := 30000
 	
-	if limits.DailyLimit != nil {
-		dailyLimit = *limits.DailyLimit
+	// 从会员等级信息中获取限制
+	if daily, ok := tierInfo["daily_limit"]; ok && daily != nil {
+		if dl, ok := daily.(int); ok {
+			dailyLimit = dl
+		}
 	}
-	if limits.MonthlyLimit != nil {
-		monthlyLimit = *limits.MonthlyLimit
+	if monthly, ok := tierInfo["monthly_limit"]; ok && monthly != nil {
+		if ml, ok := monthly.(int); ok {
+			monthlyLimit = ml
+		}
 	}
 
 	// Calculate today's usage
@@ -1149,6 +1272,81 @@ func (s *APIService) updateSyncStatus(syncHistoryID int, status, message string)
 		log.Printf("Failed to update sync status: %v", err)
 	}
 	return err
+}
+
+// ========== Auto Sync APIs ==========
+
+// GetAutoSyncConfig 获取自动同步配置
+func (s *APIService) GetAutoSyncConfig() (*models.AutoSyncConfig, error) {
+	config, err := s.autoSyncService.GetConfig()
+	if err != nil {
+		log.Printf("Error getting auto sync config: %v", err)
+		return nil, fmt.Errorf("failed to get auto sync config: %w", err)
+	}
+
+	// 添加运行状态和最后同步时间
+	status, err := s.autoSyncService.GetStatus()
+	if err != nil {
+		log.Printf("Error getting auto sync status: %v", err)
+	} else {
+		config.Enabled = status["enabled"].(bool)
+		if lastSyncTime, ok := status["last_sync_time"]; ok && lastSyncTime != nil {
+			config.LastSyncTime = lastSyncTime.(*time.Time).Format("2006-01-02 15:04:05")
+		}
+		if nextSyncTime, ok := status["next_sync_time"]; ok && nextSyncTime != nil {
+			config.NextSyncTime = nextSyncTime.(string)
+		}
+	}
+
+	return config, nil
+}
+
+// SaveAutoSyncConfig 保存自动同步配置
+func (s *APIService) SaveAutoSyncConfig(config *models.AutoSyncConfig) error {
+	err := s.autoSyncService.SaveConfig(config)
+	if err != nil {
+		log.Printf("Error saving auto sync config: %v", err)
+		return fmt.Errorf("failed to save auto sync config: %w", err)
+	}
+
+	log.Printf("Auto sync config saved: enabled=%v, frequency=%d seconds", 
+		config.Enabled, config.FrequencySeconds)
+	return nil
+}
+
+// TriggerAutoSync 立即触发一次自动同步
+func (s *APIService) TriggerAutoSync() error {
+	err := s.autoSyncService.TriggerNow()
+	if err != nil {
+		log.Printf("Error triggering auto sync: %v", err)
+		return fmt.Errorf("failed to trigger auto sync: %w", err)
+	}
+
+	log.Println("Auto sync triggered successfully")
+	return nil
+}
+
+// StopAutoSync 停止自动同步
+func (s *APIService) StopAutoSync() error {
+	err := s.autoSyncService.Stop()
+	if err != nil {
+		log.Printf("Error stopping auto sync: %v", err)
+		return fmt.Errorf("failed to stop auto sync: %w", err)
+	}
+
+	log.Println("Auto sync stopped successfully")
+	return nil
+}
+
+// GetAutoSyncStatus 获取自动同步状态
+func (s *APIService) GetAutoSyncStatus() (map[string]interface{}, error) {
+	status, err := s.autoSyncService.GetStatus()
+	if err != nil {
+		log.Printf("Error getting auto sync status: %v", err)
+		return nil, fmt.Errorf("failed to get auto sync status: %w", err)
+	}
+
+	return status, nil
 }
 
 // Helper function to format token count

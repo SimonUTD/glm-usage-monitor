@@ -583,3 +583,55 @@ func (s *DatabaseService) updateExpenseBillInTx(tx *sql.Tx, bill *models.Expense
 
 	return nil
 }
+
+// ========== 会员等级智能匹配功能 ==========
+
+// GetCurrentMembershipTier 获取当前用户的会员等级
+func (s *DatabaseService) GetCurrentMembershipTier() (string, error) {
+	db := s.db
+	
+	// 从expense_bills表获取最新的token_resource_name
+	query := `
+		SELECT token_resource_name 
+		FROM expense_bills 
+		WHERE token_resource_name IS NOT NULL 
+		  AND token_resource_name != ''
+		ORDER BY transaction_time DESC 
+		LIMIT 1
+	`
+	
+	var tokenResourceName string
+	err := db.QueryRow(query).Scan(&tokenResourceName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "free", nil // 默认为免费版
+		}
+		return "", fmt.Errorf("failed to get current membership tier: %w", err)
+	}
+	
+	// 智能匹配会员等级
+	tier := s.matchMembershipTier(tokenResourceName)
+	return tier, nil
+}
+
+// matchMembershipTier 智能匹配会员等级
+func (s *DatabaseService) matchMembershipTier(tokenResourceName string) string {
+	// 转换为小写便于匹配
+	name := strings.ToLower(tokenResourceName)
+	
+	// 匹配规则
+	if strings.Contains(name, "lite") {
+		return "lite"
+	} else if strings.Contains(name, "plus") {
+		return "plus"
+	} else if strings.Contains(name, "pro") {
+		return "pro"
+	} else if strings.Contains(name, "enterprise") || strings.Contains(name, "企业") {
+		return "enterprise"
+	} else if strings.Contains(name, "free") || strings.Contains(name, "免费") {
+		return "free"
+	}
+	
+	// 默认返回pro（如果无法匹配）
+	return "pro"
+}
