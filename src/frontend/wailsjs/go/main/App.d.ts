@@ -71,6 +71,8 @@ export function GetSyncHistory(arg1:string,arg2:number,arg3:number):Promise<mode
 
 export function GetSyncStatus():Promise<models.SyncStatus>;
 
+export function GetSyncStatusAsync():Promise<services.SyncStatusResponse>;
+
 export function GetToken():Promise<models.APIToken>;
 
 export function GetTokenUsageProgress():Promise<Record<string, any>>;
@@ -90,6 +92,8 @@ export function Greet(arg1:string):Promise<string>;
 export function SaveToken(arg1:string,arg2:string):Promise<void>;
 
 export function SetConfig(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function StartSync(arg1:string):Promise<services.StartSyncResponse>;
 
 export function StopAutoSync():Promise<Record<string, any>>;
 

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"glm-usage-monitor/models"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -279,8 +281,169 @@ func (s *APIService) ValidateSavedToken() (bool, error) {
 
 // ========== Sync Management APIs ==========
 
-// GetSyncStatus retrieves current sync status
-func (s *APIService) GetSyncStatus() (*models.SyncStatus, error) {
+// StartSyncResponse 同步启动响应
+type StartSyncResponse struct {
+	Success bool   `json:"success"`
+	SyncID  int    `json:"sync_id"`
+	Message string `json:"message"`
+}
+
+// SyncStatusResponse 同步状态响应
+type SyncStatusResponse struct {
+	Syncing      bool      `json:"syncing"`
+	Progress     float64   `json:"progress"`
+	CurrentPage  int       `json:"current_page"`
+	TotalPages   int       `json:"total_pages"`
+	SyncedCount  int       `json:"synced_count"`
+	FailedCount  int       `json:"failed_count"`
+	TotalCount   int       `json:"total_count"`
+	Message      string    `json:"message"`
+	LastSyncTime time.Time `json:"last_sync_time"`
+	Status       string    `json:"status"`
+}
+
+// StartSync 启动异步同步任务
+func (s *APIService) StartSync(billingMonth string) (*StartSyncResponse, error) {
+	// 1. 检查是否有正在运行的同步
+	runningCount, err := s.dbService.GetRunningSyncCount()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check running syncs: %w", err)
+	}
+	if runningCount > 0 {
+		return &StartSyncResponse{
+			Success: false,
+			Message: "已有同步任务正在运行，请稍后再试",
+		}, nil
+	}
+
+	// 2. 解析账单月份
+	year, month, err := parseBillingMonth(billingMonth)
+	if err != nil {
+		return nil, fmt.Errorf("invalid billing month format: %w", err)
+	}
+
+	// 3. 检查API Token
+	if s.zhipuAPIService == nil {
+		return &StartSyncResponse{
+			Success: false,
+			Message: "API Token 未配置",
+		}, nil
+	}
+
+	// 4. 创建同步历史记录
+	syncHistory := &models.SyncHistory{
+		SyncType:     "full",
+		BillingMonth: billingMonth,
+		StartTime:    time.Now(),
+		Status:       "running",
+		PageSynced:   0,
+		TotalPages:   0,
+	}
+
+	err = s.dbService.CreateSyncHistory(syncHistory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sync history: %w", err)
+	}
+
+	// 5. 启动异步同步goroutine
+	go s.performAsyncSync(syncHistory.ID, year, month, billingMonth)
+
+	// 6. 立即返回任务信息
+	return &StartSyncResponse{
+		Success: true,
+		SyncID:  syncHistory.ID,
+		Message: "同步任务已启动",
+	}, nil
+}
+
+// parseBillingMonth 解析账单月份字符串 "2024-01" -> (2024, 1)
+func parseBillingMonth(billingMonth string) (int, int, error) {
+	parts := strings.Split(billingMonth, "-")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid format, expected YYYY-MM")
+	}
+
+	year, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid year: %w", err)
+	}
+
+	month, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid month: %w", err)
+	}
+
+	if month < 1 || month > 12 {
+		return 0, 0, fmt.Errorf("month must be between 1 and 12")
+	}
+
+	return year, month, nil
+}
+
+// GetSyncStatus 获取同步状态
+func (s *APIService) GetSyncStatus() (*SyncStatusResponse, error) {
+	// 获取最新的同步历史
+	latestSync, err := s.dbService.GetLatestSyncHistory()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest sync history: %w", err)
+	}
+
+	if latestSync == nil {
+		return &SyncStatusResponse{
+			Syncing:  false,
+			Progress: 0,
+			Message:  "暂无同步记录",
+			Status:   "idle",
+		}, nil
+	}
+
+	// 计算进度
+	var progress float64 = 0
+	if latestSync.Status == "running" && latestSync.TotalPages > 0 {
+		progress = float64(latestSync.PageSynced) / float64(latestSync.TotalPages) * 100
+	} else if latestSync.Status == "completed" {
+		progress = 100
+	}
+
+	// 生成状态消息
+	message := s.getSyncStatusMessage(latestSync)
+
+	return &SyncStatusResponse{
+		Syncing:      latestSync.Status == "running",
+		Progress:     progress,
+		CurrentPage:  latestSync.PageSynced,
+		TotalPages:   latestSync.TotalPages,
+		SyncedCount:  latestSync.RecordsSynced,
+		FailedCount:  latestSync.FailedCount,
+		TotalCount:   latestSync.TotalRecords,
+		Message:      message,
+		LastSyncTime: latestSync.StartTime,
+		Status:       latestSync.Status,
+	}, nil
+}
+
+// getSyncStatusMessage 生成状态消息
+func (s *APIService) getSyncStatusMessage(sync *models.SyncHistory) string {
+	switch sync.Status {
+	case "running":
+		if sync.TotalPages > 0 {
+			return fmt.Sprintf("正在同步第 %d/%d 页...", sync.PageSynced, sync.TotalPages)
+		}
+		return "正在准备同步..."
+	case "completed":
+		return fmt.Sprintf("同步完成: 成功%d条, 失败%d条", sync.RecordsSynced, sync.FailedCount)
+	case "failed":
+		if sync.ErrorMessage != nil && *sync.ErrorMessage != "" {
+			return fmt.Sprintf("同步失败: %s", *sync.ErrorMessage)
+		}
+		return "同步失败"
+	default:
+		return "未知状态"
+	}
+}
+
+// GetSyncStatus retrieves current sync status (保持兼容性)
+func (s *APIService) GetSyncStatusLegacy() (*models.SyncStatus, error) {
 	status, err := s.dbService.GetAutoSyncStatus()
 	if err != nil {
 		log.Printf("Error getting sync status: %v", err)
@@ -792,6 +955,200 @@ func (s *APIService) ForceResetSyncStatus() error {
 
 	log.Printf("Successfully reset all running sync statuses")
 	return nil
+}
+
+// ========== 异步同步核心方法 ==========
+
+// performAsyncSync 异步执行同步任务
+func (s *APIService) performAsyncSync(syncHistoryID int, year, month int, billingMonth string) {
+	// 错误恢复
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Sync panic recovered: %v", r)
+			s.updateSyncStatus(syncHistoryID, "failed", fmt.Sprintf("同步异常: %v", r))
+		}
+	}()
+
+	// 初始化计数器
+	var totalSynced = 0
+	var totalFailed = 0
+	var currentPage = 1
+	var totalPages = 1
+	var totalRecords = 0
+	const pageSize = 20
+
+	log.Printf("Starting async sync for %s (ID: %d)", billingMonth, syncHistoryID)
+
+	// 分页循环获取数据
+	for currentPage <= totalPages {
+		log.Printf("Syncing page %d/%d", currentPage, totalPages)
+
+		// 获取当前页数据
+		billingResp, err := s.zhipuAPIService.GetExpenseBillsPage(year, month, currentPage, pageSize)
+		if err != nil {
+			errorMsg := fmt.Sprintf("获取第%d页数据失败: %v", currentPage, err)
+			log.Printf("Sync error: %s", errorMsg)
+			s.updateSyncStatus(syncHistoryID, "failed", errorMsg)
+			return
+		}
+
+		// 第一次请求时更新总页数和总记录数
+		if currentPage == 1 {
+			totalPages = billingResp.Data.TotalPages
+			totalRecords = billingResp.Data.Total
+			log.Printf("Total pages: %d, Total records: %d", totalPages, totalRecords)
+		}
+
+		// 转换 BillItem 到 ExpenseBill
+		var items []models.ExpenseBill
+		for _, billItem := range billingResp.Data.BillList {
+			// Convert to map for transformation
+			billMap, err := s.zhipuAPIService.BillItemToMap(&billItem)
+			if err != nil {
+				log.Printf("Failed to convert bill item to map: %v", err)
+				totalFailed++
+				continue
+			}
+
+			// Transform to expense bill
+			expenseBill, err := models.TransformExpenseBill(billMap)
+			if err != nil {
+				log.Printf("Failed to transform expense bill: %v", err)
+				totalFailed++
+				continue
+			}
+
+			// Validate the bill
+			if err := models.ValidateExpenseBill(expenseBill); err != nil {
+				log.Printf("Invalid expense bill: %v", err)
+				totalFailed++
+				continue
+			}
+
+			items = append(items, *expenseBill)
+		}
+
+		// 保存当前页数据
+		savedCount, failedCount := s.saveBatchData(syncHistoryID, items)
+		totalSynced += savedCount
+		totalFailed += failedCount
+
+		log.Printf("Page %d: saved %d, failed %d", currentPage, savedCount, failedCount)
+
+		// 更新同步进度
+		err = s.updateSyncProgress(syncHistoryID, currentPage, totalPages, totalSynced, totalFailed, totalRecords)
+		if err != nil {
+			log.Printf("Failed to update sync progress: %v", err)
+		}
+
+		// 检查是否完成
+		if currentPage >= totalPages {
+			break
+		}
+
+		currentPage++
+
+		// 避免API限制
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// 完成同步
+	successMsg := fmt.Sprintf("同步完成: 成功%d条, 失败%d条", totalSynced, totalFailed)
+	log.Printf("Sync completed: %s", successMsg)
+	s.updateSyncStatus(syncHistoryID, "completed", successMsg)
+}
+
+// saveBatchData 保存批量数据（使用事务）
+func (s *APIService) saveBatchData(syncHistoryID int, items []models.ExpenseBill) (savedCount, failedCount int) {
+	if len(items) == 0 {
+		return 0, 0
+	}
+
+	// 开始事务
+	tx, err := s.dbService.BeginTx()
+	if err != nil {
+		log.Printf("Failed to begin transaction: %v", err)
+		return 0, len(items)
+	}
+
+	// 确保事务被正确处理
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			log.Printf("Transaction rolled back due to error: %v", err)
+		} else {
+			err = tx.Commit()
+			if err != nil {
+				log.Printf("Failed to commit transaction: %v", err)
+				savedCount = 0
+				failedCount = len(items)
+			}
+		}
+	}()
+
+	// 批量插入数据
+	for i := range items {
+		err = s.dbService.CreateOrUpdateExpenseBillInTx(tx, &items[i])
+		if err != nil {
+			log.Printf("Failed to save bill %s: %v", items[i].BillingNo, err)
+			failedCount++
+		} else {
+			savedCount++
+		}
+	}
+
+	return savedCount, failedCount
+}
+
+// updateSyncProgress 更新同步进度
+func (s *APIService) updateSyncProgress(syncHistoryID, pageSynced, totalPages, recordsSynced, failedCount, totalRecords int) error {
+	db := s.dbService.GetDB()
+
+	updateSQL := `
+		UPDATE sync_history
+		SET page_synced = ?,
+		    total_pages = ?,
+		    records_synced = ?,
+		    total_records = ?,
+		    failed_count = ?
+		WHERE id = ?
+	`
+
+	_, err := db.Exec(updateSQL, pageSynced, totalPages, recordsSynced, totalRecords, failedCount, syncHistoryID)
+	return err
+}
+
+// updateSyncStatus 更新同步状态
+func (s *APIService) updateSyncStatus(syncHistoryID int, status, message string) error {
+	db := s.dbService.GetDB()
+
+	var updateSQL string
+	var args []interface{}
+
+	if status == "completed" || status == "failed" {
+		updateSQL = `
+			UPDATE sync_history
+			SET status = ?,
+			    error_message = ?,
+			    end_time = datetime('now')
+			WHERE id = ?
+		`
+		args = []interface{}{status, message, syncHistoryID}
+	} else {
+		updateSQL = `
+			UPDATE sync_history
+			SET status = ?,
+			    error_message = ?
+			WHERE id = ?
+		`
+		args = []interface{}{status, message, syncHistoryID}
+	}
+
+	_, err := db.Exec(updateSQL, args...)
+	if err != nil {
+		log.Printf("Failed to update sync status: %v", err)
+	}
+	return err
 }
 
 // Helper function to format token count

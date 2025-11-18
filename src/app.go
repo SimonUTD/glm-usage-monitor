@@ -33,6 +33,13 @@ func (a *App) startup(ctx context.Context) {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// 执行数据库迁移
+	log.Println("Running database migrations...")
+	if err := RunMigrations(db.GetDB()); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+	log.Println("Database migrations completed")
+
 	a.database = db
 	a.apiService = services.NewAPIService(db)
 
@@ -613,6 +620,18 @@ func (a *App) ForceResetSyncStatus() (map[string]interface{}, error) {
 		"success": true,
 		"message": "All running syncs have been reset to failed status",
 	}, nil
+}
+
+// ========== 新增的异步同步方法 ==========
+
+// StartSync 启动异步同步任务
+func (a *App) StartSync(billingMonth string) (*services.StartSyncResponse, error) {
+	return a.apiService.StartSync(billingMonth)
+}
+
+// GetSyncStatusAsync 获取异步同步状态
+func (a *App) GetSyncStatusAsync() (*services.SyncStatusResponse, error) {
+	return a.apiService.GetSyncStatus()
 }
 
 

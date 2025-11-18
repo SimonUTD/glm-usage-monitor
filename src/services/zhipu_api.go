@@ -243,7 +243,7 @@ func (s *ZhipuAPIService) SyncFullMonth(year, month int, progressCallback func(*
 		// Process bill items
 		for _, billItem := range billingResp.Data.BillList {
 			// Convert to map for transformation
-			billMap, err := s.billItemToMap(&billItem)
+			billMap, err := s.BillItemToMap(&billItem)
 			if err != nil {
 				result.FailedItems++
 				continue
@@ -326,8 +326,8 @@ func (s *ZhipuAPIService) SyncRecentMonths(months int, progressCallback func(mon
 	return results, nil
 }
 
-// billItemToMap converts BillItem to map for transformation
-func (s *ZhipuAPIService) billItemToMap(item *BillItem) (map[string]interface{}, error) {
+// BillItemToMap converts BillItem to map for transformation
+func (s *ZhipuAPIService) BillItemToMap(item *BillItem) (map[string]interface{}, error) {
 	data, err := json.Marshal(item)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal bill item: %w", err)
@@ -388,4 +388,17 @@ func (s *ZhipuAPIService) GetSyncStatistics(dbService *DatabaseService) (map[str
 	}
 
 	return stats, nil
+}
+
+// GetExpenseBillsPage 获取指定页数的账单数据
+func (s *ZhipuAPIService) GetExpenseBillsPage(year, month, pageNum, pageSize int) (*BillingResponse, error) {
+	billingMonth := fmt.Sprintf("%04d-%02d", year, month)
+
+	request := &BillingRequest{
+		BillingMonth: billingMonth,
+		PageNum:      pageNum,
+		PageSize:     pageSize,
+	}
+
+	return s.GetBillingData(request)
 }

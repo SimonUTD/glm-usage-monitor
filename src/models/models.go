@@ -80,16 +80,18 @@ type APIToken struct {
 
 // SyncHistory represents the sync_history table structure
 type SyncHistory struct {
-	ID            int       `json:"id" db:"id"`
-	SyncType      string    `json:"sync_type" db:"sync_type"`
-	StartTime     time.Time `json:"start_time" db:"start_time"`
+	ID            int        `json:"id" db:"id"`
+	SyncType      string     `json:"sync_type" db:"sync_type"`
+	StartTime     time.Time  `json:"start_time" db:"start_time"`
 	EndTime       *time.Time `json:"end_time" db:"end_time"`
-	Status        string    `json:"status" db:"status"`
-	RecordsSynced int       `json:"records_synced" db:"records_synced"`
-	ErrorMessage  *string   `json:"error_message" db:"error_message"`
-	TotalRecords  int       `json:"total_records" db:"total_records"`
-	PageSynced    int       `json:"page_synced" db:"page_synced"`
-	TotalPages    int       `json:"total_pages" db:"total_pages"`
+	Status        string     `json:"status" db:"status"`
+	RecordsSynced int        `json:"records_synced" db:"records_synced"`
+	ErrorMessage  *string    `json:"error_message" db:"error_message"`
+	TotalRecords  int        `json:"total_records" db:"total_records"`
+	PageSynced    int        `json:"page_synced" db:"page_synced"`
+	TotalPages    int        `json:"total_pages" db:"total_pages"`
+	BillingMonth  string     `json:"billing_month" db:"billing_month"`
+	FailedCount   int        `json:"failed_count" db:"failed_count"`
 }
 
 // AutoSyncConfig represents the auto_sync_config table structure

@@ -310,7 +310,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onActivated, watch } from 'vue'
+import { ref, onMounted, onActivated, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Upload, Loading, WarningFilled, Clock, Calendar, Switch, Timer } from '@element-plus/icons-vue'
 import api from '@/api'
@@ -409,21 +409,21 @@ const handleIncrementalSync = async () => {
   incrementalSyncing.value = true
 
   try {
-    const result = await api.syncBills(getCurrentMonth(), 'incremental')
+    // 使用新的异步同步方法
+    const result = await api.startSync(getCurrentMonth())
 
     if (result.success) {
-      ElMessage.success(result.message || '增量数据同步完成')
-    } else {
-      ElMessage.error(result.message || '同步失败')
-    }
+      ElMessage.success(result.message || '增量数据同步已启动')
 
-    // 重新加载历史记录（后端已自动保存）
-    loadSyncHistory()
+      // 启动异步轮询来跟踪同步状态
+      startIncrementalSyncPolling()
+    } else {
+      ElMessage.error(result.message || '同步启动失败')
+      incrementalSyncing.value = false
+    }
   } catch (error) {
     incrementalSyncing.value = false
     ElMessage.error('同步失败：' + error.message)
-  } finally {
-    incrementalSyncing.value = false
   }
 }
 
@@ -491,17 +491,61 @@ const handleFullSync = async () => {
   startProgressPolling()
 
   try {
-    const result = await api.syncBills(fullForm.value.billingMonth, 'full')
+    // 使用新的异步同步方法
+    const result = await api.startSync(fullForm.value.billingMonth)
 
-    if (!result.success) {
+    if (result.success) {
+      ElMessage.success(result.message || '全量数据同步已启动')
+      // 进度轮询已经在之前启动
+    } else {
       fullSyncing.value = false
       stopProgressPolling()
-      ElMessage.error(result.message || '同步失败')
+      ElMessage.error(result.message || '同步启动失败')
     }
   } catch (error) {
     fullSyncing.value = false
     stopProgressPolling()
     ElMessage.error('同步失败：' + error.message)
+  }
+}
+
+// 增量同步状态轮询
+let incrementalProgressTimer = null
+
+const startIncrementalSyncPolling = () => {
+  incrementalProgressTimer = setInterval(async () => {
+    try {
+      const result = await api.getSyncStatus()
+      if (result.success) {
+        if (!result.data.syncing) {
+          // 同步完成
+          incrementalSyncing.value = false
+          stopIncrementalSyncPolling()
+
+          if (result.data.result) {
+            if (result.data.result.success) {
+              ElMessage.success('增量数据同步完成')
+            } else {
+              ElMessage.error('同步失败：' + (result.data.result.message || '未知错误'))
+            }
+          } else {
+            ElMessage.success('增量数据同步完成')
+          }
+
+          // 重新加载历史记录
+          loadSyncHistory()
+        }
+      }
+    } catch (error) {
+      console.error('获取增量同步进度失败：', error)
+    }
+  }, 1000)
+}
+
+const stopIncrementalSyncPolling = () => {
+  if (incrementalProgressTimer) {
+    clearInterval(incrementalProgressTimer)
+    incrementalProgressTimer = null
   }
 }
 
@@ -511,24 +555,34 @@ const startProgressPolling = () => {
     try {
       const result = await api.getSyncStatus()
       if (result.success) {
-        if (result.data.progress) {
-          progress.value = result.data.progress
+        const syncData = result.data
+
+        // 更新进度信息
+        if (syncData.progress) {
+          progress.value = {
+            percentage: syncData.progress || 0,
+            current: syncData.syncedItems || 0,
+            total: syncData.totalItems || 0,
+            stage: syncData.message || 'processing'
+          }
         }
 
-        if (!result.data.syncing) {
+        // 检查同步是否完成
+        if (!syncData.syncing) {
           fullSyncing.value = false
           stopProgressPolling()
 
-          if (result.data.result) {
-            if (result.data.result.success) {
-              ElMessage.success('数据同步完成')
-            } else {
-              ElMessage.error('同步失败：' + (result.data.result.message || '未知错误'))
-            }
-
-            // 重新加载历史记录（后端已自动保存）
-            loadSyncHistory()
+          // 显示同步结果
+          if (syncData.status === 'completed' || syncData.status === 'success') {
+            ElMessage.success('全量数据同步完成')
+          } else if (syncData.status === 'failed') {
+            ElMessage.error('同步失败：' + (syncData.message || '未知错误'))
+          } else {
+            ElMessage.success('数据同步完成')
           }
+
+          // 重新加载历史记录
+          loadSyncHistory()
         }
       }
     } catch (error) {
@@ -779,9 +833,17 @@ const restoreFullSyncStatus = async () => {
     if (result.success && result.data.syncing) {
       // 后台正在同步，恢复前端状态
       fullSyncing.value = true
-      if (result.data.progress) {
-        progress.value = result.data.progress
+
+      const syncData = result.data
+      if (syncData.progress) {
+        progress.value = {
+          percentage: syncData.progress || 0,
+          current: syncData.syncedItems || 0,
+          total: syncData.totalItems || 0,
+          stage: syncData.message || 'processing'
+        }
       }
+
       // 启动轮询
       if (!progressTimer) {
         startProgressPolling()
@@ -819,6 +881,12 @@ onMounted(() => {
 onActivated(() => {
   // 页面重新激活时也检查状态
   restoreFullSyncStatus()
+})
+
+onUnmounted(() => {
+  // 组件卸载时清理定时器
+  stopProgressPolling()
+  stopIncrementalSyncPolling()
 })
 </script>
 

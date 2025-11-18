@@ -1,5 +1,7 @@
 // Wails API 集成 - 替换 HTTP 调用为直接的 Wails 方法调用
 import {
+  StartSync,
+  GetSyncStatusAsync,
   SyncBills,
   GetBills,
   GetBillsByDateRange,
@@ -61,7 +63,32 @@ const handleWailsSuccess = (data, message = '操作成功') => {
 }
 
 export default {
-  // 账单同步
+  // 新的异步账单同步方法
+  async startSync(billingMonth) {
+    try {
+      // 直接传递 billingMonth 字符串给后端
+      const result = await StartSync(billingMonth)
+      if (result.success) {
+        return handleWailsSuccess(result, result.message || '同步任务已启动')
+      } else {
+        return handleWailsError(new Error(result.message || '同步启动失败'))
+      }
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  // 获取异步同步状态
+  async getSyncStatusAsync() {
+    try {
+      const result = await GetSyncStatusAsync()
+      return handleWailsSuccess(result)
+    } catch (error) {
+      return handleWailsError(error)
+    }
+  },
+
+  // 账单同步（保留原有方法作为兼容）
   async syncBills(billingMonth, type = 'full') {
     try {
       // 从 billingMonth 解析年份和月份，格式为 "YYYY-MM"
@@ -177,10 +204,10 @@ export default {
     }
   },
 
-  // 获取同步状态
+  // 获取同步状态（新的异步方法）
   async getSyncStatus() {
     try {
-      const result = await GetSyncStatus()
+      const result = await GetSyncStatusAsync()
       return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)

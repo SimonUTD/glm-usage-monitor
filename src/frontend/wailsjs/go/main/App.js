@@ -134,6 +134,10 @@ export function GetSyncStatus() {
   return window['go']['main']['App']['GetSyncStatus']();
 }
 
+export function GetSyncStatusAsync() {
+  return window['go']['main']['App']['GetSyncStatusAsync']();
+}
+
 export function GetToken() {
   return window['go']['main']['App']['GetToken']();
 }
@@ -172,6 +176,10 @@ export function SaveToken(arg1, arg2) {
 
 export function SetConfig(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetConfig'](arg1, arg2, arg3);
+}
+
+export function StartSync(arg1) {
+  return window['go']['main']['App']['StartSync'](arg1);
 }
 
 export function StopAutoSync() {

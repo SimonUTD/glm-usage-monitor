@@ -918,19 +918,54 @@ const handleManualSync = async () => {
   manualSyncing.value = true
 
   try {
-    const result = await api.syncBills(getCurrentMonth(), 'incremental')
+    // 使用新的异步同步方法
+    const result = await api.startSync(getCurrentMonth())
 
     if (result.success) {
-      ElMessage.success(result.message || '手动同步账单完成')
+      ElMessage.success(result.message || '手动同步账单已启动，正在后台同步...')
 
-      // 同步完成后刷新所有统计数据
-      await refreshAllData()
+      // 启动轮询检查同步状态
+      let syncCheckCount = 0
+      const maxSyncChecks = 30 // 最多检查30次（30秒）
+
+      const checkSyncStatus = setInterval(async () => {
+        syncCheckCount++
+
+        try {
+          const statusResult = await api.getSyncStatus()
+          if (statusResult.success && !statusResult.data.syncing) {
+            // 同步完成
+            clearInterval(checkSyncStatus)
+            manualSyncing.value = false
+
+            if (statusResult.data.status === 'completed' || statusResult.data.status === 'success') {
+              ElMessage.success('手动同步账单完成')
+            } else {
+              ElMessage.error('同步失败：' + (statusResult.data.message || '未知错误'))
+            }
+
+            // 同步完成后刷新所有统计数据
+            await refreshAllData()
+          } else if (syncCheckCount >= maxSyncChecks) {
+            // 超时
+            clearInterval(checkSyncStatus)
+            manualSyncing.value = false
+            ElMessage.warning('同步超时，请稍后查看同步状态')
+          }
+        } catch (error) {
+          console.error('检查同步状态失败:', error)
+          if (syncCheckCount >= maxSyncChecks) {
+            clearInterval(checkSyncStatus)
+            manualSyncing.value = false
+          }
+        }
+      }, 1000)
     } else {
-      ElMessage.error(result.message || '同步失败')
+      ElMessage.error(result.message || '同步启动失败')
+      manualSyncing.value = false
     }
   } catch (error) {
     ElMessage.error('同步失败：' + error.message)
-  } finally {
     manualSyncing.value = false
   }
 }

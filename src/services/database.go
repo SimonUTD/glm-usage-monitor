@@ -19,6 +19,11 @@ func NewDatabaseService(db *sql.DB) *DatabaseService {
 	return &DatabaseService{db: db}
 }
 
+// GetDB returns the underlying database connection
+func (s *DatabaseService) GetDB() *sql.DB {
+	return s.db
+}
+
 // ========== ExpenseBill Operations ==========
 
 // CreateExpenseBill creates a new expense bill record
@@ -443,5 +448,138 @@ func (s *DatabaseService) DeleteAPIToken(id int) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete API token: %w", err)
 	}
+	return nil
+}
+
+// ========== 事务相关方法 ==========
+
+// BeginTx 开始一个数据库事务
+func (s *DatabaseService) BeginTx() (*sql.Tx, error) {
+	return s.db.Begin()
+}
+
+// CreateOrUpdateExpenseBillInTx 在事务中创建或更新账单
+func (s *DatabaseService) CreateOrUpdateExpenseBillInTx(tx *sql.Tx, bill *models.ExpenseBill) error {
+	// 首先检查是否已存在
+	var count int
+	checkQuery := "SELECT COUNT(*) FROM expense_bills WHERE billing_no = ?"
+	err := tx.QueryRow(checkQuery, bill.BillingNo).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check existing bill: %w", err)
+	}
+
+	if count > 0 {
+		// 更新现有记录
+		return s.updateExpenseBillInTx(tx, bill)
+	} else {
+		// 创建新记录
+		return s.createExpenseBillInTx(tx, bill)
+	}
+}
+
+// createExpenseBillInTx 在事务中创建账单
+func (s *DatabaseService) createExpenseBillInTx(tx *sql.Tx, bill *models.ExpenseBill) error {
+	query := `
+		INSERT INTO expense_bills (
+			charge_name, charge_type, model_name, use_group_name, group_name,
+			discount_rate, cost_rate, cash_cost, billing_no, order_time,
+			use_group_id, group_id, charge_unit, charge_count, charge_unit_symbol,
+			trial_cash_cost, transaction_time, time_window_start, time_window_end,
+			time_window, create_time,
+
+			-- 模型信息字段
+			api_key, model_code, model_product_type, model_product_subtype, model_product_code, model_product_name,
+
+			-- 支付和成本信息字段
+			payment_type, start_time, end_time, business_id, cost_price, cost_unit, usage_count, usage_exempt, usage_unit, currency,
+
+			-- 金额信息字段
+			settlement_amount, gift_deduct_amount, due_amount, paid_amount, unpaid_amount, billing_status, invoicing_amount, invoiced_amount,
+
+			-- Token业务字段
+			token_account_id, token_resource_no, token_resource_name, deduct_usage, deduct_after, token_type
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	_, err := tx.Exec(query,
+		// 原有字段
+		bill.ChargeName, bill.ChargeType, bill.ModelName, bill.UseGroupName, bill.GroupName,
+		bill.DiscountRate, bill.CostRate, bill.CashCost, bill.BillingNo, bill.OrderTime,
+		bill.UseGroupID, bill.GroupID, bill.ChargeUnit, bill.ChargeCount, bill.ChargeUnitSymbol,
+		bill.TrialCashCost, bill.TransactionTime, bill.TimeWindowStart, bill.TimeWindowEnd,
+		bill.TimeWindow, bill.CreateTime,
+
+		// 模型信息字段
+		bill.APIKey, bill.ModelCode, bill.ModelProductType, bill.ModelProductSubtype, bill.ModelProductCode, bill.ModelProductName,
+
+		// 支付和成本信息字段
+		bill.PaymentType, bill.StartTime, bill.EndTime, bill.BusinessID, bill.CostPrice, bill.CostUnit, bill.UsageCount, bill.UsageExempt, bill.UsageUnit, bill.Currency,
+
+		// 金额信息字段
+		bill.SettlementAmount, bill.GiftDeductAmount, bill.DueAmount, bill.PaidAmount, bill.UnpaidAmount, bill.BillingStatus, bill.InvoicingAmount, bill.InvoicedAmount,
+
+		// Token业务字段
+		bill.TokenAccountID, bill.TokenResourceNo, bill.TokenResourceName, bill.DeductUsage, bill.DeductAfter, bill.TokenType,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to create expense bill in transaction: %w", err)
+	}
+
+	return nil
+}
+
+// updateExpenseBillInTx 在事务中更新账单
+func (s *DatabaseService) updateExpenseBillInTx(tx *sql.Tx, bill *models.ExpenseBill) error {
+	query := `
+		UPDATE expense_bills SET
+			charge_name = ?, charge_type = ?, model_name = ?, use_group_name = ?, group_name = ?,
+			discount_rate = ?, cost_rate = ?, cash_cost = ?, order_time = ?,
+			use_group_id = ?, group_id = ?, charge_unit = ?, charge_count = ?, charge_unit_symbol = ?,
+			trial_cash_cost = ?, transaction_time = ?, time_window_start = ?, time_window_end = ?,
+			time_window = ?,
+
+			-- 模型信息字段
+			api_key = ?, model_code = ?, model_product_type = ?, model_product_subtype = ?, model_product_code = ?, model_product_name = ?,
+
+			-- 支付和成本信息字段
+			payment_type = ?, start_time = ?, end_time = ?, business_id = ?, cost_price = ?, cost_unit = ?, usage_count = ?, usage_exempt = ?, usage_unit = ?, currency = ?,
+
+			-- 金额信息字段
+			settlement_amount = ?, gift_deduct_amount = ?, due_amount = ?, paid_amount = ?, unpaid_amount = ?, billing_status = ?, invoicing_amount = ?, invoiced_amount = ?,
+
+			-- Token业务字段
+			token_account_id = ?, token_resource_no = ?, token_resource_name = ?, deduct_usage = ?, deduct_after = ?, token_type = ?
+		WHERE billing_no = ?
+	`
+
+	_, err := tx.Exec(query,
+		// 原有字段
+		bill.ChargeName, bill.ChargeType, bill.ModelName, bill.UseGroupName, bill.GroupName,
+		bill.DiscountRate, bill.CostRate, bill.CashCost, bill.OrderTime,
+		bill.UseGroupID, bill.GroupID, bill.ChargeUnit, bill.ChargeCount, bill.ChargeUnitSymbol,
+		bill.TrialCashCost, bill.TransactionTime, bill.TimeWindowStart, bill.TimeWindowEnd,
+		bill.TimeWindow,
+
+		// 模型信息字段
+		bill.APIKey, bill.ModelCode, bill.ModelProductType, bill.ModelProductSubtype, bill.ModelProductCode, bill.ModelProductName,
+
+		// 支付和成本信息字段
+		bill.PaymentType, bill.StartTime, bill.EndTime, bill.BusinessID, bill.CostPrice, bill.CostUnit, bill.UsageCount, bill.UsageExempt, bill.UsageUnit, bill.Currency,
+
+		// 金额信息字段
+		bill.SettlementAmount, bill.GiftDeductAmount, bill.DueAmount, bill.PaidAmount, bill.UnpaidAmount, bill.BillingStatus, bill.InvoicingAmount, bill.InvoicedAmount,
+
+		// Token业务字段
+		bill.TokenAccountID, bill.TokenResourceNo, bill.TokenResourceName, bill.DeductUsage, bill.DeductAfter, bill.TokenType,
+
+		// WHERE 条件
+		bill.BillingNo,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update expense bill in transaction: %w", err)
+	}
+
 	return nil
 }

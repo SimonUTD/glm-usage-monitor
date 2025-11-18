@@ -119,7 +119,22 @@ func (a *App) ValidateSavedToken() (bool, error) {
 
 // GetSyncStatus retrieves current sync status
 func (a *App) GetSyncStatus() (*models.SyncStatus, error) {
-	return a.apiService.GetSyncStatus()
+	// 调用新的异步同步状态接口
+	syncStatusResponse, err := a.apiService.GetSyncStatus()
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换为旧格式以保持兼容性
+	syncStatus := &models.SyncStatus{
+		IsSyncing:      syncStatusResponse.Syncing,
+		LastSyncTime:   &syncStatusResponse.LastSyncTime,
+		LastSyncStatus: &syncStatusResponse.Status,
+		Progress:       int(syncStatusResponse.Progress),
+		Message:        syncStatusResponse.Message,
+	}
+
+	return syncStatus, nil
 }
 
 // GetSyncHistory retrieves sync history
@@ -191,4 +206,5 @@ func (a *App) GetDatabaseInfo() (map[string]interface{}, error) {
 func (a *App) CheckAPIConnectivity() (map[string]interface{}, error) {
 	return a.apiService.CheckAPIConnectivity()
 }
+
 
