@@ -9,6 +9,8 @@ export const ErrorTypes = {
   AUTH: 'auth',
   PERMISSION: 'permission',
   TIMEOUT: 'timeout',
+  SYNC: 'sync',
+  DATABASE: 'database',
   UNKNOWN: 'unknown'
 }
 
@@ -352,6 +354,152 @@ if (typeof window !== 'undefined') {
   })
 }
 
+// 错误处理样式
+export const errorStyles = `
+  .error-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    max-width: 400px;
+  }
+  
+  .error-notification {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    animation: slideIn 0.3s ease-out;
+  }
+  
+  .error-title {
+    font-weight: 600;
+    color: #dc2626;
+    margin-bottom: 8px;
+  }
+  
+  .error-message {
+    color: #7f1d1d;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  
+  .error-details {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #fecaca;
+    font-size: 12px;
+    color: #991b1b;
+  }
+  
+  .error-retry {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+  }
+  
+  .retry-button {
+    background: #dc2626;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .retry-button:hover {
+    background: #b91c1c;
+  }
+  
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+`
+
+// Vue 错误处理插件
+export const ErrorHandlerPlugin = {
+  install(app, options = {}) {
+    const config = {
+      enableNotification: true,
+      enableConsoleLog: true,
+      enableErrorReporting: false,
+      maxRetries: 3,
+      retryDelay: 1000,
+      ...options
+    }
+
+    // 全局错误处理器
+    const globalErrorHandler = (error, instance, info) => {
+      const errorInfo = createError(error, ErrorTypes.UNKNOWN, ErrorLevels.ERROR, `Vue错误: ${info}`)
+      
+      if (config.enableConsoleLog) {
+        logError(errorInfo)
+      }
+      
+      if (config.enableNotification) {
+        showError(errorInfo)
+      }
+      
+      if (config.enableErrorReporting) {
+        // 这里可以添加错误上报逻辑
+        // reportErrorToServer(errorInfo)
+      }
+    }
+
+    // 注册全局错误处理器
+    app.config.errorHandler = globalErrorHandler
+
+    // 注册全局属性
+    app.config.globalProperties.$handleError = handleError
+    app.config.globalProperties.$showError = showError
+    app.config.globalProperties.$logError = logError
+
+    // 提供注入
+    app.provide('errorHandler', {
+      handleError,
+      showError,
+      logError,
+      createError,
+      config
+    })
+  }
+}
+
+// 默认错误处理器实例
+export const defaultErrorHandler = {
+  handleError,
+  showError,
+  logError,
+  createError,
+  withRetry,
+  handleApiError,
+  handleNetworkError,
+  handleValidationError,
+  handlePermissionError,
+  handleGlobalError,
+  
+  // 获取错误统计
+  getErrorStats() {
+    return {
+      totalErrors: 0, // 这里可以实现实际的错误统计逻辑
+      recentErrors: [],
+      errorTypes: {},
+      errorLevels: {}
+    }
+  }
+}
+
 export default {
   ErrorTypes,
   ErrorLevels,
@@ -364,5 +512,8 @@ export default {
   handleNetworkError,
   handleValidationError,
   handlePermissionError,
-  handleGlobalError
+  handleGlobalError,
+  ErrorHandlerPlugin,
+  errorStyles,
+  defaultErrorHandler
 }
