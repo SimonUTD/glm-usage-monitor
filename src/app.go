@@ -562,8 +562,8 @@ func (a *App) GetBillsCount() (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
-		"total":   bills.Pagination.Total,
-		"hasData": bills.Pagination.Total > 0,
+		"total":   bills.Total,
+		"hasData": bills.Total > 0,
 	}, nil
 }
 
@@ -645,7 +645,21 @@ func (a *App) ForceResetSyncStatus() (map[string]interface{}, error) {
 
 // StartSync 启动异步同步任务
 func (a *App) StartSync(billingMonth string) (*services.SyncResult, error) {
-	return a.apiService.SyncBills(billingMonth, "full", nil)
+	result, err := a.apiService.SyncBills(billingMonth, "full", nil)
+	if err != nil {
+		return &services.SyncResult{
+			Success:      false,
+			ErrorMessage: err.Error(),
+		}, err
+	}
+
+	return &services.SyncResult{
+		Success:      result.Success,
+		SyncedItems:  result.SyncedItems,
+		TotalItems:   result.TotalItems,
+		FailedItems:  result.FailedItems,
+		ErrorMessage: result.ErrorMessage,
+	}, nil
 }
 
 // GetSyncStatusAsync 获取异步同步状态

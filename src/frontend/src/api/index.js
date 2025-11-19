@@ -46,7 +46,7 @@ import {
  */
 
 // 错误处理函数 - 增强版，使用新的错误处理器
-import { handleError, ErrorTypes } from '../utils/errorHandler'
+import { handleError, ErrorTypes, withRetry } from '../utils/errorHandler'
 
 const handleWailsError = (error, context = {}) => {
   // 使用新的错误处理器处理错误
@@ -75,25 +75,30 @@ const handleWailsSuccess = (data, message = '操作成功') => {
 export default {
   // 新的异步账单同步方法
   async startSync(billingMonth) {
-    try {
-      // 直接传递 billingMonth 字符串给后端
-      const result = await StartSync(billingMonth)
-      if (result.success) {
-        return handleWailsSuccess(result, result.message || '同步任务已启动')
-      } else {
-        return handleWailsError(new Error(result.message || '同步启动失败'), {
+    return withRetry(async () => {
+      try {
+        // 直接传递 billingMonth 字符串给后端
+        const result = await StartSync(billingMonth)
+        if (result.success) {
+          return handleWailsSuccess(result, result.message || '同步任务已启动')
+        } else {
+          return handleWailsError(new Error(result.message || '同步启动失败'), {
+            operation: 'startSync',
+            billingMonth,
+            apiResponse: result
+          })
+        }
+      } catch (error) {
+        return handleWailsError(error, {
           operation: 'startSync',
           billingMonth,
-          apiResponse: result
+          errorPhase: 'wails_api_call'
         })
       }
-    } catch (error) {
-      return handleWailsError(error, {
-        operation: 'startSync',
-        billingMonth,
-        errorPhase: 'wails_api_call'
-      })
-    }
+    }, {
+      maxRetries: 2,
+      retryDelay: 1000
+    })
   },
 
   // 获取异步同步状态
@@ -108,46 +113,56 @@ export default {
 
   // 账单同步（修复参数类型 - FRONTEND_02）
   async syncBills(billingMonth, syncType = 'full') {
-    try {
-      // 直接传递billingMonth字符串和syncType给后端
-      // 后端期望 (billingMonth: string, syncType: string)
-      const result = await SyncBills(billingMonth, syncType)
-      return handleWailsSuccess(result, '同步已启动')
-    } catch (error) {
-      return handleWailsError(error, {
-        operation: 'syncBills',
-        billingMonth,
-        syncType
-      })
-    }
+    return withRetry(async () => {
+      try {
+        // 直接传递billingMonth字符串和syncType给后端
+        // 后端期望 (billingMonth: string, syncType: string) - 参数类型已正确
+        const result = await SyncBills(billingMonth, syncType)
+        return handleWailsSuccess(result, '同步已启动')
+      } catch (error) {
+        return handleWailsError(error, {
+          operation: 'syncBills',
+          billingMonth,
+          syncType
+        })
+      }
+    }, {
+      maxRetries: 2,
+      retryDelay: 1000
+    })
   },
 
   // 获取账单列表
   async getBills(params = {}) {
-    try {
-      // 将查询参数转换为 Wails API 期望的格式
-      const { page = 1, pageSize = 20, startDate, endDate, model } = params
+    return withRetry(async () => {
+      try {
+        // 将查询参数转换为 Wails API 期望的格式
+        const { page = 1, pageSize = 20, startDate, endDate, model } = params
 
-      if (startDate && endDate) {
-        // 如果有日期范围，使用 GetBillsByDateRange
-        // 将日期字符串转换为 Date 对象
-        const startDateTime = new Date(startDate)
-        const endDateTime = new Date(endDate)
-        const result = await GetBillsByDateRange(startDateTime, endDateTime, page, pageSize)
-        return handleWailsSuccess(result)
-      } else {
-        // 否则使用 GetBills
-        const billParams = {
-          page_num: page,
-          page_size: pageSize,
-          model_name: model ? model : undefined
+        if (startDate && endDate) {
+          // 如果有日期范围，使用 GetBillsByDateRange
+          // 将日期字符串转换为 Date 对象
+          const startDateTime = new Date(startDate)
+          const endDateTime = new Date(endDate)
+          const result = await GetBillsByDateRange(startDateTime, endDateTime, page, pageSize)
+          return handleWailsSuccess(result)
+        } else {
+          // 否则使用 GetBills - 修复参数结构
+          const billParams = {
+            page_num: page,
+            page_size: pageSize,
+            model_name: model ? model : undefined
+          }
+          const result = await GetBills(billParams)
+          return handleWailsSuccess(result)
         }
-        const result = await GetBills(billParams)
-        return handleWailsSuccess(result)
+      } catch (error) {
+        return handleWailsError(error)
       }
-    } catch (error) {
-      return handleWailsError(error)
-    }
+    }, {
+      maxRetries: 2,
+      retryDelay: 1000
+    })
   },
 
   // 根据ID获取账单详情
@@ -256,30 +271,40 @@ export default {
 
   // Token 管理（修复参数传递 - FRONTEND_02）
   async saveToken(token, tokenName = 'default') {
-    try {
-      // 后端期望 (tokenName, tokenValue)
-      await SaveToken(tokenName, token)
-      return handleWailsSuccess(null, 'Token 保存成功')
-    } catch (error) {
-      return handleWailsError(error, {
-        operation: 'saveToken',
-        tokenName
-      })
-    }
+    return withRetry(async () => {
+      try {
+        // 后端期望 (tokenName, tokenValue) - 修复参数顺序
+        await SaveToken(tokenName, token)
+        return handleWailsSuccess(null, 'Token 保存成功')
+      } catch (error) {
+        return handleWailsError(error, {
+          operation: 'saveToken',
+          tokenName
+        })
+      }
+    }, {
+      maxRetries: 2,
+      retryDelay: 1000
+    })
   },
 
   async getToken() {
-    try {
-      const result = await GetToken()
-      // 将 APIToken 对象转换为前端期望的格式
-      if (result) {
-        return handleWailsSuccess({ token: result.token_value }, 'Token获取成功')
-      } else {
-        return handleWailsSuccess(null, '未找到Token')
+    return withRetry(async () => {
+      try {
+        const result = await GetToken()
+        // 修复返回值处理 - 统一返回格式
+        if (result && result.token_value) {
+          return handleWailsSuccess({ token: result.token_value }, 'Token获取成功')
+        } else {
+          return handleWailsSuccess({ token: null }, '未找到Token')
+        }
+      } catch (error) {
+        return handleWailsError(error)
       }
-    } catch (error) {
-      return handleWailsError(error)
-    }
+    }, {
+      maxRetries: 2,
+      retryDelay: 1000
+    })
   },
 
   async getAllTokens() {

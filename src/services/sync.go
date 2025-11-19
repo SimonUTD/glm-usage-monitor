@@ -13,14 +13,18 @@ import (
 // CreateSyncHistory creates a new sync history record
 func (s *DatabaseService) CreateSyncHistory(history *models.SyncHistory) error {
 	query := `
-		INSERT INTO sync_history (sync_type, start_time, end_time, status, records_synced, error_message, total_records, page_synced, total_pages)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO sync_history (
+			sync_type, start_time, end_time, status, records_synced, error_message,
+			total_records, page_synced, total_pages, billing_month, failed_count,
+			sync_time, duration, message
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := s.db.Exec(query,
 		history.SyncType, history.StartTime, history.EndTime, history.Status,
 		history.RecordsSynced, history.ErrorMessage, history.TotalRecords,
-		history.PageSynced, history.TotalPages,
+		history.PageSynced, history.TotalPages, history.BillingMonth, history.FailedCount,
+		history.SyncTime, history.Duration, history.Message,
 	)
 
 	if err != nil {
@@ -35,13 +39,17 @@ func (s *DatabaseService) UpdateSyncHistory(id int, history *models.SyncHistory)
 	query := `
 		UPDATE sync_history
 		SET end_time = ?, status = ?, records_synced = ?, error_message = ?,
-		    total_records = ?, page_synced = ?, total_pages = ?
+		    total_records = ?, page_synced = ?, total_pages = ?,
+		    billing_month = ?, failed_count = ?, sync_time = ?,
+		    duration = ?, message = ?
 		WHERE id = ?
 	`
 
 	_, err := s.db.Exec(query,
 		history.EndTime, history.Status, history.RecordsSynced, history.ErrorMessage,
-		history.TotalRecords, history.PageSynced, history.TotalPages, id,
+		history.TotalRecords, history.PageSynced, history.TotalPages,
+		history.BillingMonth, history.FailedCount, history.SyncTime,
+		history.Duration, history.Message, id,
 	)
 
 	if err != nil {
@@ -102,7 +110,8 @@ func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int)
 	// 优化查询：使用索引提示，确保使用复合索引
 	query := fmt.Sprintf(`
 		SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
-		       total_records, page_synced, total_pages
+		       total_records, page_synced, total_pages, billing_month, failed_count,
+		       sync_time, duration, message
 		FROM sync_history INDEXED BY idx_sync_history_type_start_time
 		WHERE %s
 		ORDER BY start_time DESC
@@ -139,7 +148,8 @@ func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int)
 		err := rows.Scan(
 			&h.ID, &h.SyncType, &h.StartTime, &h.EndTime, &h.Status,
 			&h.RecordsSynced, &h.ErrorMessage, &h.TotalRecords,
-			&h.PageSynced, &h.TotalPages,
+			&h.PageSynced, &h.TotalPages, &h.BillingMonth, &h.FailedCount,
+			&h.SyncTime, &h.Duration, &h.Message,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan sync history: %w", err)
@@ -171,7 +181,8 @@ func (s *DatabaseService) GetLatestSyncHistory() (*models.SyncHistory, error) {
 	// 性能优化：使用索引来优化查询
 	query := `
 		SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
-		       total_records, page_synced, total_pages
+		       total_records, page_synced, total_pages, billing_month, failed_count,
+		       sync_time, duration, message
 		FROM sync_history INDEXED BY idx_sync_history_type_start_time
 		ORDER BY start_time DESC
 		LIMIT 1
@@ -181,7 +192,8 @@ func (s *DatabaseService) GetLatestSyncHistory() (*models.SyncHistory, error) {
 	err := s.db.QueryRow(query).Scan(
 		&history.ID, &history.SyncType, &history.StartTime, &history.EndTime, &history.Status,
 		&history.RecordsSynced, &history.ErrorMessage, &history.TotalRecords,
-		&history.PageSynced, &history.TotalPages,
+		&history.PageSynced, &history.TotalPages, &history.BillingMonth, &history.FailedCount,
+		&history.SyncTime, &history.Duration, &history.Message,
 	)
 
 	if err != nil {

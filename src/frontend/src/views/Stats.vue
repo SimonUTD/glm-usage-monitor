@@ -156,7 +156,7 @@
 
           <!-- 第二行：每小时图表（跨2列）+ 产品分布图表（跨4列） -->
           <div class="chart-card chart-row">
-            <HourlyEChart :data="hourlyData" @chart-click="handleChartClick" />
+            <UnifiedHourlyChart :data="hourlyData" @chart-click="handleChartClick" />
           </div>
 
           <div class="chart-card chart-row">
@@ -200,7 +200,7 @@
 
             <!-- 第二行：每小时调用次数和 Token 数量 -->
             <div class="chart-card chart-row-other hourly-chart-row">
-              <HourlyEChart :data="hourlyDataDay" @chart-click="handleChartClick" />
+              <UnifiedHourlyChart :data="hourlyDataDay" title="每天调用次数和 Token 数量" @chart-click="handleChartClick" />
             </div>
 
             <!-- 第三行：产品占比 -->
@@ -248,7 +248,7 @@
 
             <!-- 第二行：每天调用次数和 Token 数量占3列 -->
             <div class="chart-card chart-row-other weekly-chart-row">
-              <HourlyEChart :data="hourlyDataWeek" title="每天调用次数和 Token 数量" @chart-click="handleChartClick" />
+              <UnifiedHourlyChart :data="hourlyDataWeek" title="每天调用次数和 Token 数量" @chart-click="handleChartClick" />
             </div>
 
             <!-- 第三行：产品占比占3列 -->
@@ -296,7 +296,7 @@
 
             <!-- 第二行：每天调用次数和 Token 数量占3列 -->
             <div class="chart-card chart-row-other monthly-chart-row">
-              <HourlyEChart :data="hourlyDataMonth" title="每天调用次数和 Token 数量" @chart-click="handleChartClick" />
+              <UnifiedHourlyChart :data="hourlyDataMonth" title="每天调用次数和 Token 数量" @chart-click="handleChartClick" />
             </div>
 
             <!-- 第三行：产品占比占3列 -->
@@ -344,22 +344,28 @@ import {
   createProductDistributionHandler,
   createTimeSeriesHandler
 } from '@/composables/useApiCall'
-import HourlyEChart from '@/components/HourlyEChart.vue'
-import ProductPieEChart from '@/components/ProductPieEChart.vue'
-import ProductPieChart from '@/components/ProductPieChart.vue'
-import ProductBarEChart from '@/components/ProductBarEChart.vue'
-import StatCardVertical from '@/components/StatCardVertical.vue'
+import StatsCards from '@/components/StatsCards.vue'
+import StatsCharts from '@/components/StatsCharts.vue'
+import {
+  formatNumber,
+  formatStatsValue,
+  getCurrentMonth,
+  getProgressColor,
+  getProgressDuration,
+  debounce,
+  throttle,
+  PRODUCT_NAMES
+} from '@/utils/formatters'
+import {
+  initializeAuth,
+  loadMembershipTier,
+  loadAutoSyncConfig,
+  watchAutoSyncConfig,
+  autoSyncConfig
+} from '@/composables/useApiState'
 
 // ========== 静态数据定义 ==========
-// 产品名称（冻结优化）- 使用Object.freeze避免响应式开销
-const PRODUCT_NAMES = Object.freeze([
-  'glm-4.5-air 0-32k 0-0.2k',
-  'glm-4.5-air 0-32k 0.2k+',
-  'glm-4.5-air 32-128k',
-  'glm-4.6 0-32k 0-0.2k',
-  'glm-4.6 0-32k 0.2k+',
-  'glm-4.6 32-200k'
-])
+// 产品名称已从formatters导入
 
 // API使用进度数据
 const apiUsageProgress = ref({
@@ -385,11 +391,7 @@ const totalCostProgress = ref({
 // 当前会员等级信息
 const currentMembershipTier = ref('GLM Coding Pro')
 
-// 自动同步状态信息
-const autoSyncConfig = ref({
-  enabled: false,
-  frequencySeconds: 0
-})
+// 自动同步状态信息已从useApiState导入
 
 // 自动刷新定时器
 const autoRefreshTimer = ref(null)
@@ -473,59 +475,15 @@ const productDataMonth = shallowRef({
 })
 
 // ========== 性能优化工具函数 ==========
+// 防抖和节流函数已从formatters导入
 
-// 防抖函数 - 减少频繁调用
-const debounce = (fn, delay = 300) => {
-  let timer = null
-  return function(...args) {
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => fn.apply(this, args), delay)
-  }
-}
-
-// 图表懒加载控制
-const visibleCharts = ref(new Set())
-
-// 检查元素是否在视窗内
-const checkVisibility = () => {
-  const elements = document.querySelectorAll('.chart-card')
-  elements.forEach(el => {
-    const rect = el.getBoundingClientRect()
-    const isVisible = rect.top < window.innerHeight && rect.bottom > 0
-    if (isVisible) {
-      visibleCharts.value.add(el.dataset.chartId)
-    }
-  })
-}
-
-// 防抖的可见性检查
-const debouncedCheckVisibility = debounce(checkVisibility, 100)
-
-// 初始加载时检查
-onMounted(() => {
-  checkVisibility()
-  // 滚动时检查
-  window.addEventListener('scroll', debouncedCheckVisibility, { passive: true })
-  // 窗口大小改变时检查
-  window.addEventListener('resize', debouncedCheckVisibility, { passive: true })
-})
+// ========== API调用函数 ==========
 
 // ========== 数据处理函数 ==========
 
-// 获取进度条颜色（使用computed缓存）
-const getProgressColor = (percentage) => {
-  if (percentage >= 90) return '#E74C3C'      // 红色 (危险)
-  if (percentage >= 70) return '#F39C12'      // 橙色 (警告)
-  if (percentage >= 50) return '#4D6782'      // 主色 (正常)
-  return '#A8C686'                            // 绿色 (良好)
-}
+// 获取进度条颜色和时长已从formatters导入
 
-const getProgressDuration = (percentage) => {
-  if (percentage >= 90) return 14      // 很快
-  if (percentage >= 70) return 16      // 快
-  if (percentage >= 50) return 18      // 正常
-  return 20                            // 慢
-}
+// ========== 数据获取函数 ==========
 
 // 处理图表点击事件
 const handleChartClick = (params) => {
@@ -533,26 +491,7 @@ const handleChartClick = (params) => {
   ElMessage.info(`点击了: ${params.name}`)
 }
 
-const formatNumber = (num) => {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M'
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'k'
-  }
-  return num.toString()
-}
-
-// 格式化近1天统计数据
-const formatDayStatsValue = (value, type) => {
-  if (type === 'cost') {
-    return '¥' + value.toFixed(2)
-  }
-  if (type === 'token') {
-    return formatNumber(value)
-  }
-  return value.toLocaleString()
-}
+// 格式化函数已从formatters导入
 
 // 获取会员等级
 const fetchCurrentMembershipTier = async () => {
@@ -644,28 +583,36 @@ const fetchTotalCostProgress = async () => {
 }
 
 onMounted(() => {
-  fetchCurrentMembershipTier()
-  fetchAutoSyncStatus()
-  fetchApiUsageProgress()
-  fetchTokenUsageProgress()
-  fetchTotalCostProgress()
-  fetchHourlyUsage()
-  fetchProductDistribution()
-  fetchProductDistributionForDay()
-  fetchProductDistributionForWeek()
-  fetchProductDistributionForMonth()
-  fetchDayApiUsage()
-  fetchDayTokenUsage()
-  fetchDayTotalCost()
-  fetchWeekApiUsage()
-  fetchWeekTokenUsage()
-  fetchWeekTotalCost()
-  fetchMonthApiUsage()
-  fetchMonthTokenUsage()
-  fetchMonthTotalCost()
-  fetchHourlyUsageForDay()
-  fetchDailyUsageForWeek()
-  fetchDailyUsageForMonth()
+  // 初始化认证状态
+  initializeAuth()
+  
+  // 并发加载所有数据，优化性能
+  Promise.all([
+    fetchCurrentMembershipTier(),
+    fetchAutoSyncStatus(),
+    fetchApiUsageProgress(),
+    fetchTokenUsageProgress(),
+    fetchTotalCostProgress(),
+    fetchHourlyUsage(),
+    fetchProductDistribution(),
+    fetchProductDistributionForDay(),
+    fetchProductDistributionForWeek(),
+    fetchProductDistributionForMonth(),
+    fetchDayApiUsage(),
+    fetchDayTokenUsage(),
+    fetchDayTotalCost(),
+    fetchWeekApiUsage(),
+    fetchWeekTokenUsage(),
+    fetchWeekTotalCost(),
+    fetchMonthApiUsage(),
+    fetchMonthTokenUsage(),
+    fetchMonthTotalCost(),
+    fetchHourlyUsageForDay(),
+    fetchDailyUsageForWeek(),
+    fetchDailyUsageForMonth()
+  ]).catch(error => {
+    console.error('初始化数据加载失败:', error)
+  })
 })
 
 // 自动刷新所有统计数据（当自动监控启动时）
@@ -700,8 +647,8 @@ const refreshAllStats = async () => {
 }
 
 // 监听自动同步状态变化，自动启动/停止定时刷新
-watch(() => autoSyncConfig.value.enabled, (newValue) => {
-  if (newValue) {
+watchAutoSyncConfig((config) => {
+  if (config.enabled) {
     // 启动自动刷新 - 每5秒刷新一次
     if (!autoRefreshTimer.value) {
       autoRefreshTimer.value = setInterval(() => {
@@ -872,13 +819,7 @@ const fetchDailyUsageForMonth = async () => {
   hourlyDataMonth.value = result
 }
 
-// 获取当前月份
-const getCurrentMonth = () => {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  return `${year}-${month}`
-}
+// 获取当前月份已从formatters导入
 
 // 手动同步账单
 const handleManualSync = async () => {

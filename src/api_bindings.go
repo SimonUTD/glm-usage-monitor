@@ -120,7 +120,7 @@ func (a *App) SaveToken(tokenName, tokenValue string) error {
 		return services.NewValidationError(services.ErrCodeInvalidParameter, "token value cannot be empty")
 	}
 
-	err := a.apiService.SaveToken(tokenName, tokenValue)
+	err := a.apiService.SaveToken(tokenValue, tokenName, "", "")
 	if err != nil {
 		return services.WrapError(err, services.ErrorTypeDatabase, services.ErrCodeDBTransactionFailed, "failed to save token")
 	}
@@ -130,7 +130,11 @@ func (a *App) SaveToken(tokenName, tokenValue string) error {
 
 // GetToken retrieves the active API token
 func (a *App) GetToken() (*models.APIToken, error) {
-	return a.apiService.GetToken()
+	token, err := a.apiService.GetToken()
+	if err != nil {
+		return nil, err
+	}
+	return token, nil
 }
 
 // GetAllTokens retrieves all API tokens

@@ -1,7 +1,6 @@
 package services
 
 import (
-	"encoding/json"
 	"fmt"
 	"glm-usage-monitor/models"
 	"log"
@@ -30,8 +29,8 @@ func NewAutoSyncService(apiService *APIService, dbService *DatabaseService) *Aut
 
 // GetConfig 获取自动同步配置
 func (s *AutoSyncService) GetConfig() (*models.AutoSyncConfig, error) {
-	// 从数据库获取配置
-	configJSON, err := s.dbService.GetAutoSyncConfig("auto_sync_enabled")
+	// 从新的auto_sync_config表获取配置
+	config, err := s.dbService.GetAutoSyncConfigRecord()
 	if err != nil {
 		// 如果没有配置，返回默认配置
 		return &models.AutoSyncConfig{
@@ -40,29 +39,13 @@ func (s *AutoSyncService) GetConfig() (*models.AutoSyncConfig, error) {
 		}, nil
 	}
 
-	// 解析配置
-	var config models.AutoSyncConfig
-	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
-		log.Printf("Failed to parse auto sync config: %v", err)
-		return &models.AutoSyncConfig{
-			Enabled:          false,
-			FrequencySeconds: 3600,
-		}, nil
-	}
-
-	return &config, nil
+	return config, nil
 }
 
 // SaveConfig 保存自动同步配置
 func (s *AutoSyncService) SaveConfig(config *models.AutoSyncConfig) error {
-	// 序列化配置
-	configJSON, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to serialize config: %w", err)
-	}
-
-	// 保存到数据库
-	err = s.dbService.SetAutoSyncConfig("auto_sync_enabled", string(configJSON), "自动同步配置")
+	// 保存到新的auto_sync_config表
+	err := s.dbService.SaveAutoSyncConfigRecord(config)
 	if err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
@@ -190,8 +173,8 @@ func (s *AutoSyncService) performAutoSync() error {
 	}
 
 	if !response.Success {
-		log.Printf("Auto sync start failed: %s", response.Message)
-		return fmt.Errorf("auto sync start failed: %s", response.Message)
+		log.Printf("Auto sync start failed: %s", response.ErrorMessage)
+		return fmt.Errorf("auto sync start failed: %s", response.ErrorMessage)
 	}
 
 	// 更新最后同步时间
@@ -206,27 +189,17 @@ func (s *AutoSyncService) performAutoSync() error {
 
 // updateLastSyncTime 更新最后同步时间
 func (s *AutoSyncService) updateLastSyncTime(syncTime time.Time) error {
-	timeStr := syncTime.Format("2006-01-02 15:04:05")
-	return s.dbService.SetAutoSyncConfig("last_sync_time", timeStr, "最后同步时间")
+	return s.dbService.UpdateAutoSyncLastSyncTime(syncTime)
 }
 
 // GetLastSyncTime 获取最后同步时间
 func (s *AutoSyncService) GetLastSyncTime() (*time.Time, error) {
-	timeStr, err := s.dbService.GetAutoSyncConfig("last_sync_time")
+	config, err := s.dbService.GetAutoSyncConfigRecord()
 	if err != nil {
 		return nil, err
 	}
 
-	if timeStr == "" {
-		return nil, nil
-	}
-
-	syncTime, err := time.Parse("2006-01-02 15:04:05", timeStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse last sync time: %w", err)
-	}
-
-	return &syncTime, nil
+	return config.LastSyncTime, nil
 }
 
 // GetStatus 获取自动同步状态

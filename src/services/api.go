@@ -40,9 +40,9 @@ func NewAPIService(db DatabaseInterface) *APIService {
 
 // ========== Bill Management APIs ==========
 
-// GetBills retrieves expense bills with filtering and pagination
+// GetBills retrieves expense bills with filtering and pagination (IPC_02: 统一响应格式)
 func (s *APIService) GetBills(filter *models.BillFilter) (*models.PaginatedResult, error) {
-	// 参数验证
+	// IPC_03: 参数验证
 	if filter == nil {
 		filter = &models.BillFilter{
 			PageNum:  1,
@@ -50,9 +50,16 @@ func (s *APIService) GetBills(filter *models.BillFilter) (*models.PaginatedResul
 		}
 	}
 
-	var result *models.PaginatedResult
+	// 验证分页参数
+	if filter.PageNum < 1 {
+		return nil, NewValidationError(ErrCodeInvalidParameter, "Page number must be greater than 0")
+	}
+	if filter.PageSize < 1 || filter.PageSize > 100 {
+		return nil, NewValidationError(ErrCodeInvalidParameter, "Page size must be between 1 and 100")
+	}
 
 	// 使用错误处理机制执行数据库操作
+	var result *models.PaginatedResult
 	err := SafeExecute(func() error {
 		var operationErr error
 		result, operationErr = s.dbService.GetExpenseBills(filter)
@@ -245,11 +252,27 @@ func (s *APIService) GetUsageTrend(days int) ([]models.HourlyUsageData, error) {
 
 // ========== Token Management APIs ==========
 
-// SaveToken saves an API token
-func (s *APIService) SaveToken(tokenName, tokenValue string) error {
+// SaveToken saves an API token (IPC_01: 修复参数顺序)
+func (s *APIService) SaveToken(tokenValue, tokenName, provider, tokenType string) error {
+	// 参数验证
+	if tokenValue == "" {
+		return NewValidationError(ErrCodeInvalidParameter, "Token value cannot be empty")
+	}
+	if tokenName == "" {
+		tokenName = "Default Token"
+	}
+	if provider == "" {
+		provider = "zhipu"
+	}
+	if tokenType == "" {
+		tokenType = "api_key"
+	}
+
 	token := &models.APIToken{
 		TokenName:  tokenName,
 		TokenValue: tokenValue,
+		Provider:   provider,
+		TokenType:  tokenType,
 		IsActive:   true,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
@@ -268,7 +291,7 @@ func (s *APIService) SaveToken(tokenName, tokenValue string) error {
 	return nil
 }
 
-// GetToken retrieves active API token
+// GetToken retrieves active API token (IPC_02: 统一响应格式)
 func (s *APIService) GetToken() (*models.APIToken, error) {
 	token, err := s.dbService.GetActiveAPIToken()
 	if err != nil {
@@ -335,7 +358,7 @@ func (s *APIService) ValidateSavedToken() (bool, error) {
 		return false, fmt.Errorf("failed to get saved token: %w", err)
 	}
 
-	if token == nil || token.TokenValue == "" {
+	if token == nil {
 		return false, nil // No token saved
 	}
 
@@ -376,13 +399,29 @@ type SyncStatusResponse struct {
 }
 
 // SyncBills starts a sync operation for billing data (IPC_01: 修复参数签名)
-func (s *APIService) SyncBills(billingMonth, syncType string, progressCallback func(*SyncProgress)) (*SyncResult, error) {
+func (s *APIService) SyncBills(billingMonth, syncType string, progressCallback func(*models.SyncProgress)) (*models.SyncResult, error) {
+	// IPC_03: 添加参数校验
+	if billingMonth == "" {
+		return &models.SyncResult{
+			Success:      false,
+			ErrorMessage: "Billing month is required",
+		}, NewValidationError(ErrCodeInvalidParameter, "Billing month is required")
+	}
+
+	// 验证账单月份格式 (YYYY-MM)
+	if !isValidBillingMonth(billingMonth) {
+		return &models.SyncResult{
+			Success:      false,
+			ErrorMessage: "Invalid billing month format. Expected YYYY-MM",
+		}, NewValidationError(ErrCodeInvalidParameter, "Invalid billing month format")
+	}
+
 	// 验证同步类型
 	if syncType == "" {
 		syncType = "full" // 默认为全量同步
 	}
 	if syncType != "full" && syncType != "incremental" {
-		return &SyncResult{
+		return &models.SyncResult{
 			Success:      false,
 			ErrorMessage: "Invalid sync type. Must be 'full' or 'incremental'",
 		}, NewValidationError(ErrCodeInvalidParameter, "Invalid sync type")
@@ -390,7 +429,7 @@ func (s *APIService) SyncBills(billingMonth, syncType string, progressCallback f
 
 	// 检查API令牌是否配置
 	if s.zhipuAPIService == nil {
-		return &SyncResult{
+		return &models.SyncResult{
 			Success:      false,
 			ErrorMessage: "No API token configured",
 		}, NewAuthError(ErrCodeSyncNoToken, "No API token configured")
@@ -399,27 +438,89 @@ func (s *APIService) SyncBills(billingMonth, syncType string, progressCallback f
 	// 启动同步任务
 	year, month, err := parseBillingMonth(billingMonth)
 	if err != nil {
-		return &SyncResult{
+		return &models.SyncResult{
 			Success:      false,
 			ErrorMessage: "Invalid billing month format: " + err.Error(),
 		}, NewValidationError(ErrCodeInvalidParameter, "Invalid billing month format")
 	}
-	response, err := s.zhipuAPIService.SyncFullMonth(year, month, progressCallback)
+
+	// 创建同步历史记录
+	syncHistory := &models.SyncHistory{
+		SyncType:     syncType,
+		StartTime:    time.Now(),
+		Status:       "running",
+		BillingMonth: billingMonth,
+		SyncTime:     time.Now(),
+	}
+
+	// 保存同步历史
+	err = s.SaveSyncHistory(syncHistory)
 	if err != nil {
-		return &SyncResult{
+		log.Printf("Failed to save sync history: %v", err)
+	}
+
+	response, err := s.zhipuAPIService.SyncFullMonth(year, month, func(progress *SyncProgress) {
+		if progressCallback != nil {
+			// 转换类型：从 services.SyncProgress 到 models.SyncProgress
+			modelsProgress := &models.SyncProgress{
+				CurrentPage: progress.CurrentPage,
+				TotalPages:  progress.TotalPages,
+				SyncedCount: progress.SyncedItems,
+				FailedCount: 0, // services.SyncProgress没有FailedCount字段，使用0
+				TotalCount:  progress.TotalItems,
+			}
+			progressCallback(modelsProgress)
+		}
+	})
+	if err != nil {
+		// 更新同步历史为失败状态
+		syncHistory.Status = "failed"
+		endTime := time.Now()
+		syncHistory.EndTime = &endTime
+		errorMsg := err.Error()
+		syncHistory.ErrorMessage = &errorMsg
+		s.SaveSyncHistory(syncHistory)
+
+		return &models.SyncResult{
 			Success:      false,
 			ErrorMessage: "Failed to start sync: " + err.Error(),
 		}, err
 	}
 
-	// 返回标准响应格式
-	return &SyncResult{
-		Success:      true,
-		ErrorMessage: "",
+	// 更新同步历史为完成状态
+	syncHistory.Status = "completed"
+	endTime := time.Now()
+	syncHistory.EndTime = &endTime
+	syncHistory.RecordsSynced = response.SyncedItems
+	syncHistory.TotalRecords = response.TotalItems
+	syncHistory.FailedCount = response.FailedItems
+	s.SaveSyncHistory(syncHistory)
+
+	return &models.SyncResult{
+		Success:      response.Success,
 		SyncedItems:  response.SyncedItems,
 		TotalItems:   response.TotalItems,
 		FailedItems:  response.FailedItems,
+		ErrorMessage: response.ErrorMessage,
 	}, nil
+}
+
+// isValidBillingMonth 验证账单月份格式
+func isValidBillingMonth(billingMonth string) bool {
+	if len(billingMonth) != 7 {
+		return false
+	}
+	if billingMonth[4] != '-' {
+		return false
+	}
+
+	year := billingMonth[0:4]
+	month := billingMonth[5:7]
+
+	_, yearErr := strconv.Atoi(year)
+	_, monthErr := strconv.Atoi(month)
+
+	return yearErr == nil && monthErr == nil
 }
 
 // parseBillingMonth 解析账单月份字符串 "2024-01" -> (2024, 1)

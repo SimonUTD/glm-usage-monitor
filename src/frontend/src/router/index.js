@@ -1,9 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Settings from '../views/Settings.vue'
-import Bills from '../views/Bills.vue'
-import Stats from '../views/Stats.vue'
-import Sync from '../views/Sync.vue'
-import Onboarding from '../views/Onboarding.vue'
+import { initializeAuth, checkAuth } from '@/composables/useApiState'
+
+// 路由懒加载
+const Settings = () => import('../views/Settings.vue')
+const Bills = () => import('../views/Bills.vue')
+const Stats = () => import('../views/Stats.vue')
+const Sync = () => import('../views/Sync.vue')
+const Onboarding = () => import('../views/Onboarding.vue')
 
 const routes = [
   {
@@ -50,28 +53,14 @@ const router = createRouter({
 import api from '../api'
 
 router.beforeEach(async (to, from, next) => {
-  // 访问根路径时，检查并验证数据库中的Token
+  // 初始化认证状态
+  await initializeAuth()
+
+  // 访问根路径时，检查认证状态
   if (to.path === '/') {
-    try {
-      const result = await api.getToken()
-      if (result.success && result.data && result.data.token) {
-        // 数据库中有Token，验证Token是否有效
-        const validation = await api.validateSavedToken()
-        if (validation.success && validation.data) {
-          // Token有效，保存到localStorage并跳转到统计页
-          localStorage.setItem('api_token', result.data.token)
-          return next('/stats')
-        } else {
-          // Token无效，跳转到引导页让用户重新输入
-          return next('/onboarding')
-        }
-      } else {
-        // 数据库中没有Token，跳转到引导页
-        return next('/onboarding')
-      }
-    } catch (error) {
-      console.error('检查Token失败:', error)
-      // 查询失败也跳转到引导页
+    if (checkAuth()) {
+      return next('/stats')
+    } else {
       return next('/onboarding')
     }
   }
@@ -81,19 +70,13 @@ router.beforeEach(async (to, from, next) => {
     return next()
   }
 
-  // 检查是否已配置智谱AI Token
-  try {
-    const result = await api.getToken()
-    if (result.success && result.data && result.data.token) {
-      // 已配置Token，允许访问
-      return next()
-    }
-  } catch (error) {
-    console.error('检查Token失败:', error)
+  // 检查是否已认证
+  if (checkAuth()) {
+    return next()
+  } else {
+    // 没有认证，跳转到引导页
+    return next('/onboarding')
   }
-
-  // 没有配置Token，跳转到引导页
-  next('/onboarding')
 })
 
 export default router

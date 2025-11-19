@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 )
 
@@ -236,7 +237,7 @@ func (s *ZhipuAPIService) ValidateAPIToken() error {
 	return nil
 }
 
-// SyncFullMonth syncs all billing data for a specific month
+// SyncFullMonth syncs all billing data for a specific month (PERF_01: 优化并发处理)
 func (s *ZhipuAPIService) SyncFullMonth(year, month int, progressCallback func(*SyncProgress)) (*SyncResult, error) {
 	billingMonth := fmt.Sprintf("%04d-%02d", year, month)
 
@@ -250,62 +251,141 @@ func (s *ZhipuAPIService) SyncFullMonth(year, month int, progressCallback func(*
 		ProcessedBills: []models.ExpenseBill{},
 	}
 
-	// Start with first page
-	pageNum := 1
-	pageSize := 100
-	totalPages := 1
+	// First, get the first page to determine total pages
+	firstPageRequest := &BillingRequest{
+		BillingMonth: billingMonth,
+		PageNum:      1,
+		PageSize:     100,
+	}
 
-	for pageNum <= totalPages {
-		request := &BillingRequest{
-			BillingMonth: billingMonth,
-			PageNum:      pageNum,
-			PageSize:     pageSize,
+	firstPageResp, err := s.GetBillingData(firstPageRequest)
+	if err != nil {
+		result.Success = false
+		result.ErrorMessage = fmt.Sprintf("Failed to fetch first page: %v", err)
+		return result, nil
+	}
+
+	result.TotalItems = firstPageResp.Data.Total
+	totalPages := firstPageResp.Data.TotalPages
+
+	// If there's only one page, process it directly
+	if totalPages <= 1 {
+		return s.processSinglePage(firstPageResp, result, progressCallback, startTime)
+	}
+
+	// For multiple pages, use concurrent processing with worker pool
+	return s.processMultiplePagesConcurrently(billingMonth, totalPages, result, progressCallback, startTime)
+}
+
+// processSinglePage processes a single page of billing data
+func (s *ZhipuAPIService) processSinglePage(billingResp *BillingResponse, result *SyncResult, progressCallback func(*SyncProgress), startTime time.Time) (*SyncResult, error) {
+	// Process bill items from the single page
+	for _, billItem := range billingResp.Data.BillList {
+		billMap, err := s.BillItemToMap(&billItem)
+		if err != nil {
+			result.FailedItems++
+			continue
 		}
 
-		// Get billing data for current page
-		billingResp, err := s.GetBillingData(request)
+		expenseBill, err := models.TransformExpenseBill(billMap)
 		if err != nil {
+			result.FailedItems++
+			continue
+		}
+
+		if err := models.ValidateExpenseBill(expenseBill); err != nil {
+			result.FailedItems++
+			continue
+		}
+
+		result.ProcessedBills = append(result.ProcessedBills, *expenseBill)
+		result.SyncedItems++
+	}
+
+	// Update progress
+	if progressCallback != nil {
+		progress := &SyncProgress{
+			CurrentPage: 1,
+			TotalPages:  1,
+			TotalItems:  result.TotalItems,
+			SyncedItems: result.SyncedItems,
+		}
+		if result.TotalItems > 0 {
+			progress.Progress = int(float64(result.SyncedItems) / float64(result.TotalItems) * 100)
+		}
+		progressCallback(progress)
+	}
+
+	result.Duration = time.Since(startTime)
+	return result, nil
+}
+
+// processMultiplePagesConcurrently processes multiple pages using worker pool pattern (PERF_01)
+func (s *ZhipuAPIService) processMultiplePagesConcurrently(billingMonth string, totalPages int, result *SyncResult, progressCallback func(*SyncProgress), startTime time.Time) (*SyncResult, error) {
+	// Configure worker pool
+	const maxWorkers = 5 // 限制并发数，避免过载
+	const pageSize = 100
+
+	// Create channels for worker pool
+	pageChan := make(chan int, totalPages)
+	resultChan := make(chan *pageResult, totalPages)
+	errorChan := make(chan error, totalPages)
+
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		workerID := i + 1
+		go s.pageWorker(workerID, billingMonth, pageSize, pageChan, resultChan, errorChan, &wg)
+	}
+
+	// Send pages to workers
+	for pageNum := 1; pageNum <= totalPages; pageNum++ {
+		pageChan <- pageNum
+	}
+	close(pageChan)
+
+	// Wait for all workers to complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+		close(errorChan)
+	}()
+
+	// Collect results
+	pageResults := make([]*pageResult, totalPages)
+	for i := 0; i < totalPages; i++ {
+		select {
+		case pageRes := <-resultChan:
+			pageResults[pageRes.PageNum-1] = pageRes
+		case err := <-errorChan:
+			// Log error but continue processing other pages
+			fmt.Printf("Error processing page: %v\n", err)
+		case <-time.After(60 * time.Second):
+			// Timeout handling
 			result.Success = false
-			result.ErrorMessage = fmt.Sprintf("Failed to fetch page %d: %v", pageNum, err)
+			result.ErrorMessage = "Timeout occurred while processing pages"
+			result.Duration = time.Since(startTime)
 			return result, nil
 		}
+	}
 
-		// Update total information (should be consistent across pages)
-		if pageNum == 1 {
-			result.TotalItems = billingResp.Data.Total
-			totalPages = billingResp.Data.TotalPages
+	// Process all page results in order
+	for pageNum, pageRes := range pageResults {
+		if pageRes == nil {
+			result.FailedItems += pageSize // Estimate failed items
+			continue
 		}
 
-		// Process bill items
-		for _, billItem := range billingResp.Data.BillList {
-			// Convert to map for transformation
-			billMap, err := s.BillItemToMap(&billItem)
-			if err != nil {
-				result.FailedItems++
-				continue
-			}
-
-			// Transform to expense bill
-			expenseBill, err := models.TransformExpenseBill(billMap)
-			if err != nil {
-				result.FailedItems++
-				continue
-			}
-
-			// Validate bill
-			if err := models.ValidateExpenseBill(expenseBill); err != nil {
-				result.FailedItems++
-				continue
-			}
-
-			result.ProcessedBills = append(result.ProcessedBills, *expenseBill)
-			result.SyncedItems++
-		}
+		// Merge results
+		result.ProcessedBills = append(result.ProcessedBills, pageRes.Bills...)
+		result.SyncedItems += pageRes.SyncedCount
+		result.FailedItems += pageRes.FailedCount
 
 		// Update progress
 		if progressCallback != nil {
 			progress := &SyncProgress{
-				CurrentPage: pageNum,
+				CurrentPage: pageNum + 1,
 				TotalPages:  totalPages,
 				TotalItems:  result.TotalItems,
 				SyncedItems: result.SyncedItems,
@@ -315,17 +395,75 @@ func (s *ZhipuAPIService) SyncFullMonth(year, month int, progressCallback func(*
 			}
 			progressCallback(progress)
 		}
-
-		// Check if there are more pages
-		if !billingResp.Data.HasMore {
-			break
-		}
-
-		pageNum++
 	}
 
 	result.Duration = time.Since(startTime)
 	return result, nil
+}
+
+// pageResult represents the result of processing a single page
+type pageResult struct {
+	PageNum     int
+	Bills       []models.ExpenseBill
+	SyncedCount int
+	FailedCount int
+	Error       error
+}
+
+// pageWorker processes pages concurrently
+func (s *ZhipuAPIService) pageWorker(workerID int, billingMonth string, pageSize int, pageChan <-chan int, resultChan chan<- *pageResult, errorChan chan<- error, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for pageNum := range pageChan {
+		request := &BillingRequest{
+			BillingMonth: billingMonth,
+			PageNum:      pageNum,
+			PageSize:     pageSize,
+		}
+
+		// Get billing data for this page
+		billingResp, err := s.GetBillingData(request)
+		if err != nil {
+			errorChan <- fmt.Errorf("Worker %d failed to fetch page %d: %w", workerID, pageNum, err)
+			continue
+		}
+
+		// Process bill items
+		var bills []models.ExpenseBill
+		syncedCount := 0
+		failedCount := 0
+
+		for _, billItem := range billingResp.Data.BillList {
+			billMap, err := s.BillItemToMap(&billItem)
+			if err != nil {
+				failedCount++
+				continue
+			}
+
+			expenseBill, err := models.TransformExpenseBill(billMap)
+			if err != nil {
+				failedCount++
+				continue
+			}
+
+			if err := models.ValidateExpenseBill(expenseBill); err != nil {
+				failedCount++
+				continue
+			}
+
+			bills = append(bills, *expenseBill)
+			syncedCount++
+		}
+
+		// Send result
+		resultChan <- &pageResult{
+			PageNum:     pageNum,
+			Bills:       bills,
+			SyncedCount: syncedCount,
+			FailedCount: failedCount,
+			Error:       nil,
+		}
+	}
 }
 
 // SyncRecentMonths syncs billing data for recent months

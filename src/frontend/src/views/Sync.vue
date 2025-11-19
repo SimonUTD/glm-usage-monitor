@@ -40,48 +40,11 @@
                     </div>
 
                     <!-- 自动同步配置 -->
-                    <div class="auto-sync-config-compact">
-                      <div class="auto-sync-switch">
-                        <span class="config-label">
-                          <el-icon><Switch /></el-icon>
-                          启用自动同步
-                        </span>
-                        <el-switch
-                          v-model="autoSyncConfig.enabled"
-                          :loading="autoSyncLoading"
-                          @change="handleAutoSyncToggle"
-                        />
-                      </div>
-
-                      <div v-if="autoSyncConfig.enabled" class="auto-sync-frequency">
-                        <span class="frequency-label">同步频率</span>
-                        <el-select
-                          v-model="autoSyncConfig.frequency_seconds"
-                          @change="handleFrequencyChange"
-                          :loading="autoSyncLoading"
-                          class="frequency-select-compact"
-                          size="small"
-                        >
-                          <el-option :value="5" label="5秒" />
-                          <el-option :value="10" label="10秒" />
-                          <el-option :value="60" label="1分钟" />
-                          <el-option :value="300" label="5分钟" />
-                        </el-select>
-                      </div>
-
-                      <div v-if="autoSyncConfig.enabled" class="auto-sync-status">
-                        <el-tag
-                          :type="autoSyncConfig.enabled ? 'success' : 'info'"
-                          size="small"
-                          effect="plain"
-                        >
-                          <el-icon v-if="autoSyncConfig.enabled">
-                            <Loading class="rotating" />
-                          </el-icon>
-                          {{ autoSyncConfig.enabled ? '自动同步中' : '已停止' }}
-                        </el-tag>
-                      </div>
-                    </div>
+                    <AutoSyncConfig
+                      :auto-sync-config="autoSyncConfig"
+                      @update:config="handleAutoSyncConfigUpdate"
+                      @loading-change="handleAutoSyncLoadingChange"
+                    />
                   </div>
                 </el-form-item>
 
@@ -101,85 +64,17 @@
             </div>
 
             <!-- 增量同步进度条 -->
-            <div v-if="incrementalSyncing" class="progress-container">
-              <div class="progress-header">
-                <span class="progress-stage">{{ incrementalProgress.stage }}</span>
-                <span class="progress-percentage">
-                  {{ incrementalProgress.total > 0 && incrementalProgress.current > 0 ? Math.floor((incrementalProgress.current / incrementalProgress.total) * 100) : incrementalProgress.percentage }}%
-                </span>
-              </div>
-              <el-progress
-                :percentage="incrementalProgress.total > 0 ? Math.floor((incrementalProgress.current / incrementalProgress.total) * 100) : incrementalProgress.percentage"
-                :stroke-width="10"
-                color="#4D6782"
-                :show-text="false"
-              />
-              <div class="progress-details">
-                <span v-if="incrementalProgress.total > 0">
-                  第 {{ incrementalProgress.current }}/{{ incrementalProgress.total }} 页 (已处理 {{ incrementalProgress.syncedCount }} 条记录)
-                </span>
-                <span v-else>
-                  {{ incrementalProgress.percentage }}%
-                </span>
-              </div>
-            </div>
+            <SyncProgress
+              v-if="incrementalSyncing"
+              :progress="incrementalProgress"
+              progress-type="incremental"
+            />
 
             <!-- 增量同步历史记录 -->
-            <div class="history-section">
-              <div class="history-header">
-                <div class="history-title">
-                  <el-icon><Clock /></el-icon>
-                  <span>同步历史记录</span>
-                </div>
-                <el-button
-                  type="text"
-                  :loading="refreshingIncremental"
-                  @click="handleRefreshIncrementalHistory"
-                  class="refresh-button"
-                  :disabled="refreshingIncremental"
-                >
-                  <el-icon><Refresh /></el-icon>
-                </el-button>
-              </div>
-              <el-table
-                :data="incrementalHistory"
-                style="width: 100%"
-                size="small"
-                :empty-text="'暂无历史记录'"
-                v-if="true"
-              >
-                <el-table-column prop="sync_time" label="同步时间" width="180">
-                  <template #default="scope">
-                    {{ dayjs(scope.row.sync_time).tz('Asia/Shanghai').format('YYYY-MM-DD HH:mm:ss') }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="billing_month" label="账单月份" width="120" />
-                <el-table-column prop="status" label="状态" width="100">
-                  <template #default="scope">
-                    <el-tag :type="scope.row.status === '成功' ? 'success' : 'danger'" size="small">
-                      {{ scope.row.status }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="synced_count" label="成功数量" width="100" />
-                <el-table-column prop="failed_count" label="失败数量" width="100" />
-                <el-table-column prop="total_count" label="总数量" width="100" />
-                <el-table-column prop="message" label="消息" />
-              </el-table>
-
-              <!-- 分页 -->
-              <div class="pagination-container">
-                <el-pagination
-                  v-model:current-page="incrementalHistoryPagination.currentPage"
-                  v-model:page-size="incrementalHistoryPagination.pageSize"
-                  :page-sizes="[10, 20, 50, 100]"
-                  :total="incrementalHistoryPagination.total"
-                  layout="total, sizes, prev, pager, next, jumper"
-                  @size-change="handleIncrementalHistorySizeChange"
-                  @current-change="handleIncrementalHistoryPageChange"
-                />
-              </div>
-            </div>
+            <SyncHistory
+              ref="incrementalHistoryRef"
+              sync-type="incremental"
+            />
           </div>
         </el-tab-pane>
 
@@ -230,86 +125,17 @@
             </div>
 
             <!-- 进度条 - 仅全量同步时显示 -->
-            <div v-if="fullSyncing" class="progress-container">
-              <div class="progress-header">
-                <span class="progress-stage">{{ getStageText(progress.stage) }}</span>
-                <span class="progress-percentage">
-                  {{ progress.total > 0 && progress.current > 0 ? Math.floor((progress.current / progress.total) * 100) : progress.percentage }}%
-                </span>
-              </div>
-              <el-progress
-                :percentage="progress.total > 0 ? Math.floor((progress.current / progress.total) * 100) : progress.percentage"
-                :stroke-width="10"
-                color="#4D6782"
-                :show-text="false"
-              />
-              <div class="progress-details">
-                <span v-if="progress.total > 0">
-                  {{ progress.current }} / {{ progress.total }} 条记录 ({{ progress.current > 0 && progress.total > 0 ? Math.floor((progress.current / progress.total) * 100) : progress.percentage }}%)
-                </span>
-                <span v-else>
-                  {{ progress.percentage }}%
-                </span>
-              </div>
-            </div>
+            <SyncProgress
+              v-if="fullSyncing"
+              :progress="progress"
+              progress-type="full"
+            />
 
             <!-- 全量同步历史记录 -->
-            <div class="history-section full-sync-history">
-              <div class="history-header full-sync-header">
-                <div class="history-title">
-                  <el-icon><Clock /></el-icon>
-                  <span>同步历史记录</span>
-                </div>
-                <el-button
-                  type="text"
-                  :loading="refreshingFull"
-                  @click="handleRefreshFullHistory"
-                  class="refresh-button"
-                  :disabled="refreshingFull"
-                >
-                  <el-icon><Refresh /></el-icon>
-                </el-button>
-              </div>
-              <el-table
-                :data="fullHistory"
-                style="width: 100%"
-                size="small"
-                :empty-text="'暂无历史记录'"
-                v-if="true"
-                class="full-sync-table"
-              >
-                <el-table-column prop="sync_time" label="同步时间" width="180">
-                  <template #default="scope">
-                    {{ dayjs(scope.row.sync_time).tz('Asia/Shanghai').format('YYYY-MM-DD HH:mm:ss') }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="billing_month" label="账单月份" width="120" />
-                <el-table-column prop="status" label="状态" width="100">
-                  <template #default="scope">
-                    <el-tag :type="scope.row.status === '成功' ? 'success' : 'danger'" size="small">
-                      {{ scope.row.status }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="synced_count" label="成功数量" width="100" />
-                <el-table-column prop="failed_count" label="失败数量" width="100" />
-                <el-table-column prop="total_count" label="总数量" width="100" />
-                <el-table-column prop="message" label="消息" />
-              </el-table>
-
-              <!-- 分页 -->
-              <div class="pagination-container">
-                <el-pagination
-                  v-model:current-page="fullHistoryPagination.currentPage"
-                  v-model:page-size="fullHistoryPagination.pageSize"
-                  :page-sizes="[10, 20, 50, 100]"
-                  :total="fullHistoryPagination.total"
-                  layout="total, sizes, prev, pager, next, jumper"
-                  @size-change="handleFullHistorySizeChange"
-                  @current-change="handleFullHistoryPageChange"
-                />
-              </div>
-            </div>
+            <SyncHistory
+              ref="fullHistoryRef"
+              sync-type="full"
+            />
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -326,6 +152,10 @@ import api from '@/api'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
+import SyncProgress from '@/components/SyncProgress.vue'
+import SyncHistory from '@/components/SyncHistory.vue'
+import AutoSyncConfig from '@/components/AutoSyncConfig.vue'
+import { getCurrentMonth } from '@/utils/formatters'
 
 // 扩展 dayjs
 dayjs.extend(utc)
@@ -349,11 +179,13 @@ const autoSyncConfig = ref({
 })
 const autoSyncLoading = ref(false)
 
+// 组件引用
+const incrementalHistoryRef = ref(null)
+const fullHistoryRef = ref(null)
+
 // 状态
 const incrementalSyncing = ref(false)
 const fullSyncing = ref(false)
-const refreshingIncremental = ref(false)
-const refreshingFull = ref(false)
 const progress = ref({
   percentage: 0,
   current: 0,
@@ -371,23 +203,7 @@ const incrementalProgress = ref({
   syncedCount: 0
 })
 
-// 同步历史记录
-const incrementalHistory = ref([])
-const fullHistory = ref([])
-
-// 增量同步分页数据
-const incrementalHistoryPagination = ref({
-  currentPage: 1,
-  pageSize: 10,
-  total: 0
-})
-
-// 全量同步分页数据
-const fullHistoryPagination = ref({
-  currentPage: 1,
-  pageSize: 10,
-  total: 0
-})
+// 同步历史记录已移至SyncHistory组件
 
 // 增量同步
 const handleIncrementalSync = async () => {
@@ -590,7 +406,9 @@ const startIncrementalSyncPolling = () => {
           }
 
           // 重新加载历史记录
-          loadSyncHistory()
+          if (incrementalHistoryRef.value) {
+            incrementalHistoryRef.value.loadHistory()
+          }
         }
       }
     } catch (error) {
@@ -670,7 +488,9 @@ const startProgressPolling = () => {
           }
 
           // 重新加载历史记录
-          loadSyncHistory()
+          if (fullHistoryRef.value) {
+            fullHistoryRef.value.loadHistory()
+          }
         }
       }
     } catch (error) {
@@ -710,110 +530,17 @@ const getStageText = (stage) => {
   return stageMap[stage] || '处理中'
 }
 
-// 加载同步历史记录
-const loadSyncHistory = async () => {
-  try {
-    // 加载增量同步历史
-    await loadIncrementalHistory()
-
-    // 加载全量同步历史
-    await loadFullHistory()
-  } catch (error) {
-    console.error('加载同步历史失败:', error)
-  }
+// 处理自动同步配置更新
+const handleAutoSyncConfigUpdate = (newConfig) => {
+  autoSyncConfig.value = newConfig
 }
 
-// 加载增量同步历史记录（分页）
-const loadIncrementalHistory = async () => {
-  try {
-    const { currentPage, pageSize } = incrementalHistoryPagination.value
-    const result = await api.getSyncHistory('incremental', pageSize, currentPage)
-    if (result.success) {
-      incrementalHistory.value = result.data
-      // 如果后端返回总数，更新分页信息
-      if (result.total !== undefined) {
-        incrementalHistoryPagination.value.total = result.total
-      }
-    }
-  } catch (error) {
-    console.error('加载增量同步历史失败:', error)
-  }
+// 处理自动同步加载状态变化
+const handleAutoSyncLoadingChange = (loading) => {
+  autoSyncLoading.value = loading
 }
 
-// 加载全量同步历史记录（分页）
-const loadFullHistory = async () => {
-  try {
-    const { currentPage, pageSize } = fullHistoryPagination.value
-    const result = await api.getSyncHistory('full', pageSize, currentPage)
-    if (result.success) {
-      fullHistory.value = result.data
-      // 如果后端返回总数，更新分页信息
-      if (result.total !== undefined) {
-        fullHistoryPagination.value.total = result.total
-      }
-    }
-  } catch (error) {
-    console.error('加载全量同步历史失败:', error)
-  }
-}
-
-// 处理全量同步分页变化
-const handleFullHistoryPageChange = (page) => {
-  fullHistoryPagination.value.currentPage = page
-  loadFullHistory()
-}
-
-// 处理全量同步每页显示数量变化
-const handleFullHistorySizeChange = (size) => {
-  fullHistoryPagination.value.pageSize = size
-  fullHistoryPagination.value.currentPage = 1 // 重置到第一页
-  loadFullHistory()
-}
-
-// 处理增量同步分页变化
-const handleIncrementalHistoryPageChange = (page) => {
-  incrementalHistoryPagination.value.currentPage = page
-  loadIncrementalHistory()
-}
-
-// 处理增量同步每页显示数量变化
-const handleIncrementalHistorySizeChange = (size) => {
-  incrementalHistoryPagination.value.pageSize = size
-  incrementalHistoryPagination.value.currentPage = 1 // 重置到第一页
-  loadIncrementalHistory()
-}
-
-// 刷新增量同步历史记录
-const handleRefreshIncrementalHistory = async () => {
-  refreshingIncremental.value = true
-  try {
-    await loadIncrementalHistory()
-    ElMessage.success('历史记录已刷新')
-  } catch (error) {
-    ElMessage.error('刷新失败：' + error.message)
-  } finally {
-    refreshingIncremental.value = false
-  }
-}
-
-// 刷新全量同步历史记录
-const handleRefreshFullHistory = async () => {
-  refreshingFull.value = true
-  try {
-    await loadFullHistory()
-    ElMessage.success('历史记录已刷新')
-  } catch (error) {
-    ElMessage.error('刷新失败：' + error.message)
-  } finally {
-    refreshingFull.value = false
-  }
-}
-
-// 获取当前月份
-const getCurrentMonth = () => {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
+// 获取当前月份已从formatters导入
 
 // 格式化时间
 const formatTime = (timeStr) => {
@@ -833,95 +560,6 @@ const loadAutoSyncConfig = async () => {
     }
   } catch (error) {
     console.error('加载自动同步配置失败:', error)
-  }
-}
-
-// 处理自动同步开关
-const handleAutoSyncToggle = async (enabled) => {
-  if (!enabled) {
-    // 关闭自动同步
-    try {
-      autoSyncLoading.value = true
-      const result = await api.stopAutoSync()
-      if (result.success) {
-        autoSyncConfig.value.enabled = false
-        autoSyncConfig.value.next_sync_time = null
-        ElMessage.success('自动同步已停止')
-      }
-    } catch (error) {
-      ElMessage.error('停止自动同步失败：' + error.message)
-      autoSyncConfig.value.enabled = true // 恢复状态
-    } finally {
-      autoSyncLoading.value = false
-    }
-  } else {
-    // 开启自动同步 - 需要校验是否有基础数据
-    autoSyncLoading.value = true
-
-    try {
-      // 1. 检查是否有基础数据
-      const countResult = await api.getBillsCount()
-      if (!countResult.success) {
-        throw new Error(countResult.message || '校验失败')
-      }
-
-      const { total, hasData } = countResult.data
-
-      // 2. 如果没有数据，阻止开启并提示
-      if (!hasData) {
-        autoSyncConfig.value.enabled = false // 恢复状态
-        ElMessage.warning({
-          message: '无法开启自动同步：系统中暂无账单数据\n\n请先进行一次"全量同步"或"增量同步"来获取基础数据',
-          duration: 5000
-        })
-        return
-      }
-
-      // 3. 有数据，继续开启自动同步
-      const result = await api.saveAutoSyncConfig({
-        enabled: true,
-        frequency_seconds: autoSyncConfig.value.frequency_seconds
-      })
-
-      if (result.success) {
-        autoSyncConfig.value = {
-          ...autoSyncConfig.value,
-          ...result.data
-        }
-        ElMessage.success('自动同步已开启')
-      }
-
-    } catch (error) {
-      ElMessage.error('开启自动同步失败：' + error.message)
-      autoSyncConfig.value.enabled = false // 恢复状态
-    } finally {
-      autoSyncLoading.value = false
-    }
-  }
-}
-
-// 处理频率变化
-const handleFrequencyChange = async (frequency) => {
-  if (!autoSyncConfig.value.enabled) return
-
-  try {
-    autoSyncLoading.value = true
-    const result = await api.saveAutoSyncConfig({
-      enabled: true,
-      frequency_seconds: frequency
-    })
-    if (result.success) {
-      autoSyncConfig.value.frequency_seconds = frequency
-      autoSyncConfig.value = {
-        ...autoSyncConfig.value,
-        ...result.data
-      }
-      ElMessage.success('频率已更新')
-    }
-  } catch (error) {
-    ElMessage.error('更新频率失败：' + error.message)
-  } finally {
-    autoSyncLoading.value = false
   }
 }
 

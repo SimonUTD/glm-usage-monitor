@@ -38,6 +38,35 @@ func GetMigrations() []MigrationScript {
 		},
 		{
 			Version:     2,
+			Description: "DB_06: 修复数据类型不一致问题",
+			SQL: `
+				-- 修复 business_id 类型从 INTEGER 改为 TEXT
+				ALTER TABLE expense_bills ADD COLUMN business_id_new TEXT;
+				UPDATE expense_bills SET business_id_new = CAST(business_id AS TEXT) WHERE business_id IS NOT NULL;
+				ALTER TABLE expense_bills DROP COLUMN business_id;
+				ALTER TABLE expense_bills RENAME COLUMN business_id_new TO business_id;
+
+				-- 修复 usage_count 类型从 INTEGER 改为 REAL
+				ALTER TABLE expense_bills ADD COLUMN usage_count_new REAL;
+				UPDATE expense_bills SET usage_count_new = CAST(usage_count AS REAL) WHERE usage_count IS NOT NULL;
+				ALTER TABLE expense_bills DROP COLUMN usage_count;
+				ALTER TABLE expense_bills RENAME COLUMN usage_count_new TO usage_count;
+
+				-- 修复 deduct_usage 类型从 INTEGER 改为 REAL
+				ALTER TABLE expense_bills ADD COLUMN deduct_usage_new REAL;
+				UPDATE expense_bills SET deduct_usage_new = CAST(deduct_usage AS REAL) WHERE deduct_usage IS NOT NULL;
+				ALTER TABLE expense_bills DROP COLUMN deduct_usage;
+				ALTER TABLE expense_bills RENAME COLUMN deduct_usage_new TO deduct_usage;
+
+				-- 修复 token_account_id 类型从 INTEGER 改为 TEXT
+				ALTER TABLE expense_bills ADD COLUMN token_account_id_new TEXT;
+				UPDATE expense_bills SET token_account_id_new = CAST(token_account_id AS TEXT) WHERE token_account_id IS NOT NULL;
+				ALTER TABLE expense_bills DROP COLUMN token_account_id;
+				ALTER TABLE expense_bills RENAME COLUMN token_account_id_new TO token_account_id;
+			`,
+		},
+		{
+			Version:     3,
 			Description: "DB_02: 重新设计api_tokens表结构",
 			SQL: `
 				-- 为api_tokens表添加缺失字段
@@ -50,7 +79,7 @@ func GetMigrations() []MigrationScript {
 			`,
 		},
 		{
-			Version:     3,
+			Version:     4,
 			Description: "修复sync_history表结构",
 			SQL: `
 				-- 添加billing_month字段
@@ -71,7 +100,7 @@ func GetMigrations() []MigrationScript {
 			`,
 		},
 		{
-			Version:     4,
+			Version:     5,
 			Description: "DB_05: 为membership_tier_limits表添加缺失字段",
 			SQL: `
 				-- 为membership_tier_limits表添加缺失字段
@@ -80,14 +109,18 @@ func GetMigrations() []MigrationScript {
 			`,
 		},
 		{
-			Version:     4,
+			Version:     5,
 			Description: "重构auto_sync_config表",
 			SQL: `
 				-- 创建新的auto_sync_config表
 				CREATE TABLE IF NOT EXISTS auto_sync_config_v2 (
 					id INTEGER PRIMARY KEY AUTOINCREMENT,
 					enabled INTEGER NOT NULL DEFAULT 0,
-					frequency_seconds INTEGER NOT NULL DEFAULT 10,
+					frequency_seconds INTEGER NOT NULL DEFAULT 3600,
+					sync_type TEXT NOT NULL DEFAULT 'full',
+					billing_month TEXT,
+					max_retries INTEGER NOT NULL DEFAULT 3,
+					retry_delay INTEGER NOT NULL DEFAULT 60,
 					next_sync_time DATETIME,
 					last_sync_time DATETIME,
 					created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -98,7 +131,10 @@ func GetMigrations() []MigrationScript {
 				INSERT INTO auto_sync_config_v2 (enabled, frequency_seconds)
 				SELECT
 					CASE WHEN config_value = 'true' THEN 1 ELSE 0 END,
-					10
+					COALESCE(
+						(SELECT CAST(config_value AS INTEGER) FROM auto_sync_config WHERE config_key = 'frequency_seconds'),
+						3600
+					)
 				FROM auto_sync_config
 				WHERE config_key = 'enabled'
 				LIMIT 1;
@@ -111,7 +147,7 @@ func GetMigrations() []MigrationScript {
 			`,
 		},
 		{
-			Version:     5,
+			Version:     6,
 			Description: "为同步历史表添加复合索引以优化分页查询性能",
 			SQL: `
 				-- 为sync_history表添加复合索引
@@ -120,7 +156,7 @@ func GetMigrations() []MigrationScript {
 			`,
 		},
 		{
-			Version:     6,
+			Version:     7,
 			Description: "添加性能优化索引 (DB_06)",
 			SQL: `
 				-- 为expense_bills添加性能索引
@@ -144,13 +180,17 @@ func GetMigrations() []MigrationScript {
 			`,
 		},
 		{
-			Version:     7,
-			Description: "添加数据完整性约束 (DB_07)",
+			Version:     8,
+			Description: "添加数据完整性约束 (DB_05)",
 			SQL: `
 				-- 为expense_bills添加CHECK约束
 				ALTER TABLE expense_bills ADD CONSTRAINT chk_cash_cost CHECK (cash_cost >= 0);
 				ALTER TABLE expense_bills ADD CONSTRAINT chk_billing_no_not_empty CHECK (billing_no IS NOT NULL AND billing_no != '');
 				ALTER TABLE expense_bills ADD CONSTRAINT chk_create_time_not_future CHECK (create_time <= datetime('now'));
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_discount_rate CHECK (discount_rate >= 0 AND discount_rate <= 100);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_cost_rate CHECK (cost_rate >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_charge_count CHECK (charge_count >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_charge_unit CHECK (charge_unit >= 0);
 				
 				-- 为api_tokens添加UNIQUE约束
 				CREATE UNIQUE INDEX IF NOT EXISTS idx_api_tokens_unique_name ON api_tokens(token_name);
@@ -159,6 +199,52 @@ func GetMigrations() []MigrationScript {
 				-- 为sync_history添加CHECK约束
 				ALTER TABLE sync_history ADD CONSTRAINT chk_sync_type_valid CHECK (sync_type IN ('full', 'incremental', 'manual'));
 				ALTER TABLE sync_history ADD CONSTRAINT chk_start_time_not_future CHECK (start_time <= datetime('now'));
+				ALTER TABLE sync_history ADD CONSTRAINT chk_end_time_after_start CHECK (end_time IS NULL OR end_time >= start_time);
+				ALTER TABLE sync_history ADD CONSTRAINT chk_records_synced_valid CHECK (records_synced >= 0);
+				ALTER TABLE sync_history ADD CONSTRAINT chk_total_records_valid CHECK (total_records >= 0);
+				
+				-- 为membership_tier_limits添加CHECK约束
+				ALTER TABLE membership_tier_limits ADD CONSTRAINT chk_daily_limit_positive CHECK (daily_limit IS NULL OR daily_limit > 0);
+				ALTER TABLE membership_tier_limits ADD CONSTRAINT chk_monthly_limit_positive CHECK (monthly_limit IS NULL OR monthly_limit > 0);
+				ALTER TABLE membership_tier_limits ADD CONSTRAINT chk_max_tokens_positive CHECK (max_tokens IS NULL OR max_tokens > 0);
+				ALTER TABLE membership_tier_limits ADD CONSTRAINT chk_max_context_length_positive CHECK (max_context_length IS NULL OR max_context_length > 0);
+			`,
+		},
+		{
+			Version:     9,
+			Description: "添加复合UNIQUE约束和额外数据完整性检查 (DB_05增强)",
+			SQL: `
+				-- 为expense_bills添加复合UNIQUE约束，防止重复账单
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_bills_unique_billing_no ON expense_bills(billing_no);
+				
+				-- 为auto_sync_config添加UNIQUE约束
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_auto_sync_config_unique_enabled ON auto_sync_config(id) WHERE enabled = 1;
+				
+				-- 为expense_bills添加业务逻辑约束
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_original_amount_non_negative CHECK (original_amount IS NULL OR original_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_original_cost_price_non_negative CHECK (original_cost_price IS NULL OR original_cost_price >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_credit_pay_amount_non_negative CHECK (credit_pay_amount IS NULL OR credit_pay_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_third_party_non_negative CHECK (third_party IS NULL OR third_party >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_cash_amount_non_negative CHECK (cash_amount IS NULL OR cash_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_api_usage_non_negative CHECK (api_usage IS NULL OR api_usage >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_settlement_amount_non_negative CHECK (settlement_amount IS NULL OR settlement_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_gift_deduct_amount_non_negative CHECK (gift_deduct_amount IS NULL OR gift_deduct_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_due_amount_non_negative CHECK (due_amount IS NULL OR due_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_paid_amount_non_negative CHECK (paid_amount IS NULL OR paid_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_unpaid_amount_non_negative CHECK (unpaid_amount IS NULL OR unpaid_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_invoicing_amount_non_negative CHECK (invoicing_amount IS NULL OR invoicing_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_invoiced_amount_non_negative CHECK (invoiced_amount IS NULL OR invoiced_amount >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_usage_count_non_negative CHECK (usage_count IS NULL OR usage_count >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_usage_exempt_valid CHECK (usage_exempt IS NULL OR usage_exempt IN (0, 1));
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_deduct_usage_non_negative CHECK (deduct_usage IS NULL OR deduct_usage >= 0);
+				
+				-- 为api_tokens添加额外约束
+				ALTER TABLE api_tokens ADD CONSTRAINT chk_token_name_not_empty CHECK (token_name IS NOT NULL AND token_name != '');
+				ALTER TABLE api_tokens ADD CONSTRAINT chk_token_value_not_empty CHECK (token_value IS NOT NULL AND token_value != '');
+				ALTER TABLE api_tokens ADD CONSTRAINT chk_provider_not_empty CHECK (provider IS NOT NULL AND provider != '');
+				ALTER TABLE api_tokens ADD CONSTRAINT chk_token_type_not_empty CHECK (token_type IS NOT NULL AND token_type != '');
+				ALTER TABLE api_tokens ADD CONSTRAINT chk_daily_limit_positive CHECK (daily_limit IS NULL OR daily_limit > 0);
+				ALTER TABLE api_tokens ADD CONSTRAINT chk_monthly_limit_positive CHECK (monthly_limit IS NULL OR monthly_limit > 0);
 			`,
 		},
 	}

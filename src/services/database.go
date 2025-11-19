@@ -96,8 +96,24 @@ func (s *DatabaseService) BatchCreateExpenseBills(bills []*models.ExpenseBill) e
 			discount_rate, cost_rate, cash_cost, billing_no, order_time,
 			use_group_id, group_id, charge_unit, charge_count, charge_unit_symbol,
 			trial_cash_cost, transaction_time, time_window_start, time_window_end,
-			time_window, create_time
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			time_window, create_time,
+			
+			-- DB_01: 缺失的关键字段
+			billing_date, billing_time, customer_id, order_no, original_amount, original_cost_price,
+			discount_type, credit_pay_amount, third_party, cash_amount, api_usage,
+			
+			-- 模型信息字段
+			api_key, model_code, model_product_type, model_product_subtype, model_product_code, model_product_name,
+			
+			-- 支付和成本信息字段
+			payment_type, start_time, end_time, business_id, cost_price, cost_unit, usage_count, usage_exempt, usage_unit, currency,
+			
+			-- 金额信息字段
+			settlement_amount, gift_deduct_amount, due_amount, paid_amount, unpaid_amount, billing_status, invoicing_amount, invoiced_amount,
+			
+			-- Token业务字段
+			token_account_id, token_resource_no, token_resource_name, deduct_usage, deduct_after, token_type
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	stmt, err := tx.Prepare(query)
@@ -113,11 +129,28 @@ func (s *DatabaseService) BatchCreateExpenseBills(bills []*models.ExpenseBill) e
 		}
 
 		_, err := stmt.Exec(
+			// 原有字段
 			bill.ChargeName, bill.ChargeType, bill.ModelName, bill.UseGroupName, bill.GroupName,
 			bill.DiscountRate, bill.CostRate, bill.CashCost, bill.BillingNo, bill.OrderTime,
 			bill.UseGroupID, bill.GroupID, bill.ChargeUnit, bill.ChargeCount, bill.ChargeUnitSymbol,
 			bill.TrialCashCost, bill.TransactionTime, bill.TimeWindowStart, bill.TimeWindowEnd,
 			bill.TimeWindow, bill.CreateTime,
+
+			// DB_01: 缺失的关键字段
+			bill.BillingDate, bill.BillingTime, bill.CustomerID, bill.OrderNo, bill.OriginalAmount, bill.OriginalCostPrice,
+			bill.DiscountType, bill.CreditPayAmount, bill.ThirdParty, bill.CashAmount, bill.APIUsage,
+
+			// 模型信息字段
+			bill.APIKey, bill.ModelCode, bill.ModelProductType, bill.ModelProductSubtype, bill.ModelProductCode, bill.ModelProductName,
+
+			// 支付和成本信息字段
+			bill.PaymentType, bill.StartTime, bill.EndTime, bill.BusinessID, bill.CostPrice, bill.CostUnit, bill.UsageCount, bill.UsageExempt, bill.UsageUnit, bill.Currency,
+
+			// 金额信息字段
+			bill.SettlementAmount, bill.GiftDeductAmount, bill.DueAmount, bill.PaidAmount, bill.UnpaidAmount, bill.BillingStatus, bill.InvoicingAmount, bill.InvoicedAmount,
+
+			// Token业务字段
+			bill.TokenAccountID, bill.TokenResourceNo, bill.TokenResourceName, bill.DeductUsage, bill.DeductAfter, bill.TokenType,
 		)
 
 		if err != nil {
@@ -459,13 +492,19 @@ func (s *DatabaseService) SaveAPIToken(token *models.APIToken) error {
 		return fmt.Errorf("failed to deactivate existing tokens: %w", err)
 	}
 
-	// Insert new token as active
+	// Insert new token as active with all fields
 	query := `
-		INSERT INTO api_tokens (token_name, token_value, is_active, created_at, updated_at)
-		VALUES (?, ?, 1, ?, ?)
+		INSERT INTO api_tokens (
+			token_name, token_value, provider, token_type, is_active,
+			daily_limit, monthly_limit, expires_at, last_used_at,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err = tx.Exec(query, token.TokenName, token.TokenValue, token.CreatedAt, token.UpdatedAt)
+	_, err = tx.Exec(query,
+		token.TokenName, token.TokenValue, token.Provider, token.TokenType,
+		token.DailyLimit, token.MonthlyLimit, token.ExpiresAt, token.LastUsedAt,
+		token.CreatedAt, token.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save new API token: %w", err)
 	}
@@ -503,7 +542,9 @@ func (s *DatabaseService) GetActiveAPIToken() (*models.APIToken, error) {
 // GetAllAPITokens retrieves all API tokens
 func (s *DatabaseService) GetAllAPITokens() ([]models.APIToken, error) {
 	query := `
-		SELECT id, token_name, token_value, is_active, created_at, updated_at
+		SELECT id, token_name, token_value, provider, token_type, is_active,
+			   daily_limit, monthly_limit, expires_at, last_used_at,
+			   created_at, updated_at
 		FROM api_tokens
 		ORDER BY updated_at DESC
 	`
@@ -517,7 +558,10 @@ func (s *DatabaseService) GetAllAPITokens() ([]models.APIToken, error) {
 	var tokens []models.APIToken
 	for rows.Next() {
 		var token models.APIToken
-		err := rows.Scan(&token.ID, &token.TokenName, &token.TokenValue, &token.IsActive, &token.CreatedAt, &token.UpdatedAt)
+		err := rows.Scan(
+			&token.ID, &token.TokenName, &token.TokenValue, &token.Provider, &token.TokenType, &token.IsActive,
+			&token.DailyLimit, &token.MonthlyLimit, &token.ExpiresAt, &token.LastUsedAt,
+			&token.CreatedAt, &token.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan API token: %w", err)
 		}
@@ -744,6 +788,84 @@ func (s *DatabaseService) CleanOldSyncHistory(days int) error {
 	}
 
 	log.Printf("Cleaned sync history older than %d days", days)
+	return nil
+}
+
+// ========== AutoSyncConfig Operations ==========
+
+// GetAutoSyncConfigRecord retrieves the auto sync configuration record
+func (s *DatabaseService) GetAutoSyncConfigRecord() (*models.AutoSyncConfig, error) {
+	query := `
+		SELECT id, enabled, frequency_seconds, last_sync_time, next_sync_time,
+			   sync_type, billing_month, max_retries, retry_delay,
+			   created_at, updated_at
+		FROM auto_sync_config
+		ORDER BY id DESC
+		LIMIT 1
+	`
+
+	var config models.AutoSyncConfig
+	err := s.db.QueryRow(query).Scan(
+		&config.ID, &config.Enabled, &config.FrequencySeconds, &config.LastSyncTime, &config.NextSyncTime,
+		&config.SyncType, &config.BillingMonth, &config.MaxRetries, &config.RetryDelay,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// 返回默认配置
+			return &models.AutoSyncConfig{
+				Enabled:          false,
+				FrequencySeconds: 3600,
+				SyncType:         "full",
+				MaxRetries:       3,
+				RetryDelay:       60,
+				CreatedAt:        time.Now(),
+				UpdatedAt:        time.Now(),
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to get auto sync config: %w", err)
+	}
+
+	return &config, nil
+}
+
+// SaveAutoSyncConfigRecord saves the auto sync configuration record
+func (s *DatabaseService) SaveAutoSyncConfigRecord(config *models.AutoSyncConfig) error {
+	query := `
+		INSERT OR REPLACE INTO auto_sync_config (
+			id, enabled, frequency_seconds, last_sync_time, next_sync_time,
+			sync_type, billing_month, max_retries, retry_delay,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	_, err := s.db.Exec(query,
+		config.ID, config.Enabled, config.FrequencySeconds, config.LastSyncTime, config.NextSyncTime,
+		config.SyncType, config.BillingMonth, config.MaxRetries, config.RetryDelay,
+		config.CreatedAt, config.UpdatedAt,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to save auto sync config: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateAutoSyncLastSyncTime updates the last sync time
+func (s *DatabaseService) UpdateAutoSyncLastSyncTime(syncTime time.Time) error {
+	query := `
+		UPDATE auto_sync_config
+		SET last_sync_time = ?, updated_at = ?
+		WHERE id = (SELECT id FROM auto_sync_config ORDER BY id DESC LIMIT 1)
+	`
+
+	_, err := s.db.Exec(query, syncTime, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to update last sync time: %w", err)
+	}
+
 	return nil
 }
 

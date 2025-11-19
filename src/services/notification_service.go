@@ -1,8 +1,10 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -27,18 +29,36 @@ type Notification struct {
 	ReadAt    *time.Time       `json:"read_at,omitempty"`
 }
 
+// WebSocketConnection represents a WebSocket connection
+type WebSocketConnection interface {
+	WriteJSON(v interface{}) error
+	Close() error
+}
+
 // NotificationService provides notification management
 type NotificationService struct {
-	notifications []Notification
-	nextID        int
+	notifications    []Notification
+	nextID           int
+	connections      map[string]WebSocketConnection
+	connectionsMutex sync.RWMutex
+	broadcastChannel chan Notification
+	stopBroadcast    chan bool
 }
 
 // NewNotificationService creates a new notification service
 func NewNotificationService() *NotificationService {
-	return &NotificationService{
-		notifications: make([]Notification, 0),
-		nextID:        1,
+	ns := &NotificationService{
+		notifications:    make([]Notification, 0),
+		nextID:           1,
+		connections:      make(map[string]WebSocketConnection),
+		broadcastChannel: make(chan Notification, 100),
+		stopBroadcast:    make(chan bool),
 	}
+
+	// Start broadcast goroutine
+	go ns.broadcastLoop()
+
+	return ns
 }
 
 // AddNotification adds a new notification
@@ -56,6 +76,13 @@ func (ns *NotificationService) AddNotification(notificationType NotificationType
 	ns.nextID++
 
 	log.Printf("Notification added: %s - %s", title, message)
+
+	// Broadcast to WebSocket connections
+	select {
+	case ns.broadcastChannel <- notification:
+	default:
+		log.Printf("Broadcast channel full, notification not sent to WebSocket clients")
+	}
 }
 
 // AddSyncSuccessNotification adds a sync success notification
@@ -169,4 +196,183 @@ func (ns *NotificationService) GetRecentNotifications(limit int) []Notification 
 	}
 
 	return recent
+}
+
+// RegisterConnection registers a WebSocket connection
+func (ns *NotificationService) RegisterConnection(clientID string, conn WebSocketConnection) {
+	ns.connectionsMutex.Lock()
+	defer ns.connectionsMutex.Unlock()
+
+	ns.connections[clientID] = conn
+	log.Printf("WebSocket connection registered: %s", clientID)
+
+	// Send unread notifications to new connection
+	unreadNotifications := ns.GetUnreadNotifications()
+	for _, notification := range unreadNotifications {
+		if err := conn.WriteJSON(notification); err != nil {
+			log.Printf("Failed to send notification to client %s: %v", clientID, err)
+			delete(ns.connections, clientID)
+			return
+		}
+	}
+}
+
+// UnregisterConnection removes a WebSocket connection
+func (ns *NotificationService) UnregisterConnection(clientID string) {
+	ns.connectionsMutex.Lock()
+	defer ns.connectionsMutex.Unlock()
+
+	if conn, exists := ns.connections[clientID]; exists {
+		conn.Close()
+		delete(ns.connections, clientID)
+		log.Printf("WebSocket connection unregistered: %s", clientID)
+	}
+}
+
+// GetConnectionCount returns the number of active WebSocket connections
+func (ns *NotificationService) GetConnectionCount() int {
+	ns.connectionsMutex.RLock()
+	defer ns.connectionsMutex.RUnlock()
+
+	return len(ns.connections)
+}
+
+// broadcastLoop broadcasts notifications to all connected WebSocket clients
+func (ns *NotificationService) broadcastLoop() {
+	for {
+		select {
+		case notification := <-ns.broadcastChannel:
+			ns.broadcastNotification(notification)
+		case <-ns.stopBroadcast:
+			return
+		}
+	}
+}
+
+// broadcastNotification sends a notification to all connected clients
+func (ns *NotificationService) broadcastNotification(notification Notification) {
+	ns.connectionsMutex.RLock()
+	connections := make(map[string]WebSocketConnection)
+	for id, conn := range ns.connections {
+		connections[id] = conn
+	}
+	ns.connectionsMutex.RUnlock()
+
+	for clientID, conn := range connections {
+		if err := conn.WriteJSON(notification); err != nil {
+			log.Printf("Failed to broadcast notification to client %s: %v", clientID, err)
+			ns.UnregisterConnection(clientID)
+		}
+	}
+}
+
+// SendCustomMessage sends a custom message to a specific client
+func (ns *NotificationService) SendCustomMessage(clientID string, message interface{}) error {
+	ns.connectionsMutex.RLock()
+	conn, exists := ns.connections[clientID]
+	ns.connectionsMutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("client %s not connected", clientID)
+	}
+
+	return conn.WriteJSON(message)
+}
+
+// BroadcastCustomMessage broadcasts a custom message to all connected clients
+func (ns *NotificationService) BroadcastCustomMessage(message interface{}) {
+	ns.connectionsMutex.RLock()
+	connections := make(map[string]WebSocketConnection)
+	for id, conn := range ns.connections {
+		connections[id] = conn
+	}
+	ns.connectionsMutex.RUnlock()
+
+	for clientID, conn := range connections {
+		if err := conn.WriteJSON(message); err != nil {
+			log.Printf("Failed to broadcast custom message to client %s: %v", clientID, err)
+			ns.UnregisterConnection(clientID)
+		}
+	}
+}
+
+// GetConnectedClients returns a list of connected client IDs
+func (ns *NotificationService) GetConnectedClients() []string {
+	ns.connectionsMutex.RLock()
+	defer ns.connectionsMutex.RUnlock()
+
+	clients := make([]string, 0, len(ns.connections))
+	for clientID := range ns.connections {
+		clients = append(clients, clientID)
+	}
+
+	return clients
+}
+
+// Shutdown gracefully shuts down the notification service
+func (ns *NotificationService) Shutdown() {
+	close(ns.stopBroadcast)
+
+	ns.connectionsMutex.Lock()
+	defer ns.connectionsMutex.Unlock()
+
+	for clientID, conn := range ns.connections {
+		conn.Close()
+		delete(ns.connections, clientID)
+		log.Printf("WebSocket connection closed during shutdown: %s", clientID)
+	}
+
+	log.Println("Notification service shutdown complete")
+}
+
+// AddSyncProgressNotification adds a sync progress notification
+func (ns *NotificationService) AddSyncProgressNotification(billingMonth string, current, total int, percentage float64) {
+	title := "同步进度"
+	message := fmt.Sprintf("账单月份 %s 同步进度：%d/%d (%.1f%%)", billingMonth, current, total, percentage)
+
+	data := map[string]interface{}{
+		"billing_month": billingMonth,
+		"current":       current,
+		"total":         total,
+		"percentage":    percentage,
+		"type":          "sync_progress",
+	}
+
+	ns.AddNotification(NotificationTypeInfo, title, message, data)
+}
+
+// AddSystemNotification adds a system-level notification
+func (ns *NotificationService) AddSystemNotification(title, message string, notificationType NotificationType) {
+	data := map[string]interface{}{
+		"type": "system_notification",
+	}
+
+	ns.AddNotification(notificationType, title, message, data)
+}
+
+// ExportNotifications exports notifications as JSON
+func (ns *NotificationService) ExportNotifications() ([]byte, error) {
+	return json.MarshalIndent(ns.notifications, "", "  ")
+}
+
+// GetNotificationsByType returns notifications filtered by type
+func (ns *NotificationService) GetNotificationsByType(notificationType NotificationType) []Notification {
+	var filtered []Notification
+	for _, notification := range ns.notifications {
+		if notification.Type == notificationType {
+			filtered = append(filtered, notification)
+		}
+	}
+	return filtered
+}
+
+// GetNotificationsByDateRange returns notifications within a date range
+func (ns *NotificationService) GetNotificationsByDateRange(start, end time.Time) []Notification {
+	var filtered []Notification
+	for _, notification := range ns.notifications {
+		if notification.CreatedAt.After(start) && notification.CreatedAt.Before(end) {
+			filtered = append(filtered, notification)
+		}
+	}
+	return filtered
 }
