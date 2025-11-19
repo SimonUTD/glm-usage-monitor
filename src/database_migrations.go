@@ -18,7 +18,7 @@ func GetMigrations() []MigrationScript {
 	return []MigrationScript{
 		{
 			Version:     1,
-			Description: "添加缺失的expense_bills字段",
+			Description: "DB_01: 添加缺失的expense_bills字段",
 			SQL: `
 				-- 添加客户相关字段
 				ALTER TABLE expense_bills ADD COLUMN customer_id TEXT;
@@ -38,6 +38,19 @@ func GetMigrations() []MigrationScript {
 		},
 		{
 			Version:     2,
+			Description: "DB_02: 重新设计api_tokens表结构",
+			SQL: `
+				-- 为api_tokens表添加缺失字段
+				ALTER TABLE api_tokens ADD COLUMN provider TEXT;
+				ALTER TABLE api_tokens ADD COLUMN token_type TEXT;
+				ALTER TABLE api_tokens ADD COLUMN daily_limit INTEGER;
+				ALTER TABLE api_tokens ADD COLUMN monthly_limit INTEGER;
+				ALTER TABLE api_tokens ADD COLUMN expires_at DATETIME;
+				ALTER TABLE api_tokens ADD COLUMN last_used_at DATETIME;
+			`,
+		},
+		{
+			Version:     3,
 			Description: "修复sync_history表结构",
 			SQL: `
 				-- 添加billing_month字段
@@ -46,6 +59,11 @@ func GetMigrations() []MigrationScript {
 				-- 添加failed_count字段
 				ALTER TABLE sync_history ADD COLUMN failed_count INTEGER DEFAULT 0;
 
+				-- 添加sync_time和duration字段
+				ALTER TABLE sync_history ADD COLUMN sync_time DATETIME;
+				ALTER TABLE sync_history ADD COLUMN duration INTEGER;
+				ALTER TABLE sync_history ADD COLUMN message TEXT;
+
 				-- 更新现有记录的billing_month
 				UPDATE sync_history
 				SET billing_month = strftime('%Y-%m', start_time)
@@ -53,15 +71,12 @@ func GetMigrations() []MigrationScript {
 			`,
 		},
 		{
-			Version:     3,
-			Description: "添加关键索引",
+			Version:     4,
+			Description: "DB_05: 为membership_tier_limits表添加缺失字段",
 			SQL: `
-				-- 为expense_bills添加索引
-				CREATE INDEX IF NOT EXISTS idx_expense_bills_customer_id ON expense_bills(customer_id);
-				CREATE INDEX IF NOT EXISTS idx_expense_bills_billing_date ON expense_bills(billing_date);
-				CREATE INDEX IF NOT EXISTS idx_expense_bills_order_no ON expense_bills(order_no);
-				CREATE INDEX IF NOT EXISTS idx_expense_bills_time_window_start ON expense_bills(time_window_start);
-				CREATE INDEX IF NOT EXISTS idx_expense_bills_transaction_time ON expense_bills(transaction_time);
+				-- 为membership_tier_limits表添加缺失字段
+				ALTER TABLE membership_tier_limits ADD COLUMN period_hours INTEGER;
+				ALTER TABLE membership_tier_limits ADD COLUMN call_limit INTEGER;
 			`,
 		},
 		{
@@ -96,12 +111,54 @@ func GetMigrations() []MigrationScript {
 			`,
 		},
 		{
-			Version: 4,
+			Version:     5,
 			Description: "为同步历史表添加复合索引以优化分页查询性能",
 			SQL: `
 				-- 为sync_history表添加复合索引
 				CREATE INDEX IF NOT EXISTS idx_sync_history_type_start_time ON sync_history(sync_type, start_time DESC);
 				CREATE INDEX IF NOT EXISTS idx_sync_history_status ON sync_history(status);
+			`,
+		},
+		{
+			Version:     6,
+			Description: "添加性能优化索引 (DB_06)",
+			SQL: `
+				-- 为expense_bills添加性能索引
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_billing_date ON expense_bills(billing_date);
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_customer_id ON expense_bills(customer_id);
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_order_no ON expense_bills(order_no);
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_model_name ON expense_bills(model_name);
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_charge_type ON expense_bills(charge_type);
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_business_id ON expense_bills(business_id);
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_transaction_time ON expense_bills(transaction_time);
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_create_time ON expense_bills(create_time);
+				CREATE INDEX IF NOT EXISTS idx_expense_bills_billing_no ON expense_bills(billing_no);
+				
+				-- 为api_tokens添加索引
+				CREATE INDEX IF NOT EXISTS idx_api_tokens_is_active ON api_tokens(is_active);
+				CREATE INDEX IF NOT EXISTS idx_api_tokens_token_name ON api_tokens(token_name);
+				
+				-- 为sync_history添加复合索引
+				CREATE INDEX IF NOT EXISTS idx_sync_history_billing_month ON sync_history(billing_month);
+				CREATE INDEX IF NOT EXISTS idx_sync_history_sync_type ON sync_history(sync_type);
+			`,
+		},
+		{
+			Version:     7,
+			Description: "添加数据完整性约束 (DB_07)",
+			SQL: `
+				-- 为expense_bills添加CHECK约束
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_cash_cost CHECK (cash_cost >= 0);
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_billing_no_not_empty CHECK (billing_no IS NOT NULL AND billing_no != '');
+				ALTER TABLE expense_bills ADD CONSTRAINT chk_create_time_not_future CHECK (create_time <= datetime('now'));
+				
+				-- 为api_tokens添加UNIQUE约束
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_api_tokens_unique_name ON api_tokens(token_name);
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_api_tokens_unique_value ON api_tokens(token_value);
+				
+				-- 为sync_history添加CHECK约束
+				ALTER TABLE sync_history ADD CONSTRAINT chk_sync_type_valid CHECK (sync_type IN ('full', 'incremental', 'manual'));
+				ALTER TABLE sync_history ADD CONSTRAINT chk_start_time_not_future CHECK (start_time <= datetime('now'));
 			`,
 		},
 	}

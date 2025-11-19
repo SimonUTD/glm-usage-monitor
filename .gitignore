@@ -39,6 +39,7 @@ logs/
 *.sqlite3
 
 old/
+old_src/
 迁移进度概要.md
 CLAUDE.md
 reqiurement.md
@@ -47,3 +48,4 @@ job.md
 CLAUDE.md
 issues/
 数据库字段补全计划.md
+.kilocode/

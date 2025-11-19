@@ -35,7 +35,9 @@ import {
   TriggerAutoSync,
   StopAutoSync,
   GetAutoSyncStatus,
-  GetProductNames
+  GetProductNames,
+  GetBillsCount,
+  GetCurrentMembershipTier
 } from '../../wailsjs/go/main/App'
 
 /**
@@ -44,7 +46,7 @@ import {
  */
 
 // 错误处理函数 - 增强版，使用新的错误处理器
-import { handleError, ErrorTypes } from '@/utils/errorHandler'
+import { handleError, ErrorTypes } from '../utils/errorHandler'
 
 const handleWailsError = (error, context = {}) => {
   // 使用新的错误处理器处理错误
@@ -104,16 +106,19 @@ export default {
     }
   },
 
-  // 账单同步（保留原有方法作为兼容）
-  async syncBills(billingMonth, type = 'full') {
+  // 账单同步（修复参数类型 - FRONTEND_02）
+  async syncBills(billingMonth, syncType = 'full') {
     try {
-      // 从 billingMonth 解析年份和月份，格式为 "YYYY-MM"
-      const [year, month] = billingMonth.split('-').map(Number)
-      // Wails SyncBills 方法返回同步进度和状态
-      const result = await SyncBills(year, month)
+      // 直接传递billingMonth字符串和syncType给后端
+      // 后端期望 (billingMonth: string, syncType: string)
+      const result = await SyncBills(billingMonth, syncType)
       return handleWailsSuccess(result, '同步已启动')
     } catch (error) {
-      return handleWailsError(error)
+      return handleWailsError(error, {
+        operation: 'syncBills',
+        billingMonth,
+        syncType
+      })
     }
   },
 
@@ -165,7 +170,7 @@ export default {
     }
   },
 
-  // 获取统计数据
+  // 获取统计数据（添加period参数支持 - FRONTEND_02）
   async getStats(period = '5h') {
     try {
       // 将 period 参数转换为 startDate 和 endDate
@@ -189,11 +194,14 @@ export default {
           startDate = new Date(now.getTime() - 5 * 60 * 60 * 1000)
       }
 
-      // GetStats 期望 time.Time 指针，传 Date 对象
-      const result = await GetStats(startDate, now)
+      // GetStats 现在期望 (startDate, endDate, period)
+      const result = await GetStats(startDate, now, period)
       return handleWailsSuccess(result)
     } catch (error) {
-      return handleWailsError(error)
+      return handleWailsError(error, {
+        operation: 'getStats',
+        period
+      })
     }
   },
 
@@ -230,24 +238,33 @@ export default {
     }
   },
 
-  // 获取同步历史
-  async getSyncHistory(syncType, limit = 10, page = 1) {
+  // 获取同步历史（修复参数顺序）
+  async getSyncHistory(syncType, page = 1, limit = 10) {
     try {
+      // 后端期望 (syncType, pageNum, pageSize)
       const result = await GetSyncHistory(syncType, page, limit)
       return handleWailsSuccess(result)
     } catch (error) {
-      return handleWailsError(error)
+      return handleWailsError(error, {
+        operation: 'getSyncHistory',
+        syncType,
+        page,
+        limit
+      })
     }
   },
 
-  // Token 管理
-  async saveToken(token, description = '') {
+  // Token 管理（修复参数传递 - FRONTEND_02）
+  async saveToken(token, tokenName = 'default') {
     try {
       // 后端期望 (tokenName, tokenValue)
-      await SaveToken('default', token)
+      await SaveToken(tokenName, token)
       return handleWailsSuccess(null, 'Token 保存成功')
     } catch (error) {
-      return handleWailsError(error)
+      return handleWailsError(error, {
+        operation: 'saveToken',
+        tokenName
+      })
     }
   },
 
@@ -446,20 +463,18 @@ export default {
 
   async getBillsCount() {
     try {
-      const result = await GetBills({ page: 1, pageSize: 1 })
-      return handleWailsSuccess(result?.total || 0)
+      const result = await GetBillsCount()
+      return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
     }
   },
 
-  // 占位符方法 - 需要根据实际业务逻辑实现
+  // 获取当前会员等级
   async getCurrentMembershipTier() {
     try {
-      const startDate = new Date(Date.now() - 24*60*60*1000)
-      const endDate = new Date()
-      const result = await GetStats(startDate, endDate)
-      return handleWailsSuccess(result?.membership_info?.tier_name || 'free')
+      const result = await GetCurrentMembershipTier()
+      return handleWailsSuccess(result)
     } catch (error) {
       return handleWailsError(error)
     }
@@ -530,26 +545,6 @@ export default {
   },
 
   // ========== 自动同步相关方法 ==========
-
-  // 获取自动同步配置
-  async getAutoSyncConfig() {
-    try {
-      const result = await GetAutoSyncConfig()
-      return handleWailsSuccess(result)
-    } catch (error) {
-      return handleWailsError(error)
-    }
-  },
-
-  // 保存自动同步配置
-  async saveAutoSyncConfig(config) {
-    try {
-      await SaveAutoSyncConfig(config)
-      return handleWailsSuccess(null, '自动同步配置已保存')
-    } catch (error) {
-      return handleWailsError(error)
-    }
-  },
 
   // 触发一次自动同步
   async triggerAutoSync() {

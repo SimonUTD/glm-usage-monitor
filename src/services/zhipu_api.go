@@ -3,10 +3,10 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"glm-usage-monitor/models"
 	"io"
 	"net/http"
 	"net/url"
-	"glm-usage-monitor/models"
 	"time"
 )
 
@@ -30,31 +30,31 @@ func NewZhipuAPIService(apiToken string) *ZhipuAPIService {
 	}
 }
 
-// BillingRequest represents the request parameters for billing API
+// BillingRequest represents request parameters for billing API
 type BillingRequest struct {
 	BillingMonth string `json:"billingMonth"`
 	PageNum      int    `json:"pageNum"`
 	PageSize     int    `json:"pageSize"`
 }
 
-// BillingResponse represents the response from billing API
+// BillingResponse represents response from billing API
 type BillingResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    Data   `json:"data"`
 }
 
-// Data represents the data structure in billing response
+// Data represents data structure in billing response
 type Data struct {
-	BillList    []BillItem `json:"billList"`
-	Total       int        `json:"total"`
-	PageNum     int        `json:"pageNum"`
-	PageSize    int        `json:"pageSize"`
-	TotalPages  int        `json:"totalPages"`
-	HasMore     bool       `json:"hasMore"`
+	BillList   []BillItem `json:"billList"`
+	Total      int        `json:"total"`
+	PageNum    int        `json:"pageNum"`
+	PageSize   int        `json:"pageSize"`
+	TotalPages int        `json:"totalPages"`
+	HasMore    bool       `json:"hasMore"`
 }
 
-// BillItem represents a single bill item from the API
+// BillItem represents a single bill item from API
 type BillItem struct {
 	ChargeName       string  `json:"chargeName"`
 	ChargeType       string  `json:"chargeType"`
@@ -86,14 +86,14 @@ type SyncProgress struct {
 
 // SyncResult represents the result of a sync operation
 type SyncResult struct {
-	Success       bool           `json:"success"`
-	Message       string         `json:"message"`
-	TotalItems    int            `json:"total_items"`
-	SyncedItems   int            `json:"synced_items"`
-	FailedItems   int            `json:"failed_items"`
-	SkippedItems  int            `json:"skipped_items"`
-	Duration      time.Duration  `json:"duration"`
-	ErrorMessage  string         `json:"error_message,omitempty"`
+	Success        bool                 `json:"success"`
+	Message        string               `json:"message"`
+	TotalItems     int                  `json:"total_items"`
+	SyncedItems    int                  `json:"synced_items"`
+	FailedItems    int                  `json:"failed_items"`
+	SkippedItems   int                  `json:"skipped_items"`
+	Duration       time.Duration        `json:"duration"`
+	ErrorMessage   string               `json:"error_message,omitempty"`
 	ProcessedBills []models.ExpenseBill `json:"processed_bills,omitempty"`
 }
 
@@ -149,7 +149,7 @@ func (s *ZhipuAPIService) GetBillingData(request *BillingRequest) (*BillingRespo
 	req.Header.Set("Authorization", "Bearer "+s.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	// Make the request
+	// Make request
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make HTTP request: %w", err)
@@ -181,7 +181,7 @@ func (s *ZhipuAPIService) GetBillingData(request *BillingRequest) (*BillingRespo
 	return &billingResp, nil
 }
 
-// ValidateAPIToken validates the API token by making a test request
+// ValidateAPIToken validates API token by making a test request
 func (s *ZhipuAPIService) ValidateAPIToken() error {
 	// 验证API令牌是否为空
 	if s.apiToken == "" {
@@ -242,11 +242,11 @@ func (s *ZhipuAPIService) SyncFullMonth(year, month int, progressCallback func(*
 
 	startTime := time.Now()
 	result := &SyncResult{
-		Success:      true,
-		TotalItems:   0,
-		SyncedItems:  0,
-		FailedItems:  0,
-		SkippedItems: 0,
+		Success:        true,
+		TotalItems:     0,
+		SyncedItems:    0,
+		FailedItems:    0,
+		SkippedItems:   0,
 		ProcessedBills: []models.ExpenseBill{},
 	}
 
@@ -292,9 +292,9 @@ func (s *ZhipuAPIService) SyncFullMonth(year, month int, progressCallback func(*
 				continue
 			}
 
-			// Validate the bill
+			// Validate bill
 			if err := models.ValidateExpenseBill(expenseBill); err != nil {
-				result.SkippedItems++
+				result.FailedItems++
 				continue
 			}
 
@@ -350,7 +350,7 @@ func (s *ZhipuAPIService) SyncRecentMonths(months int, progressCallback func(mon
 			}
 		}
 
-		// Sync the month
+		// Sync month
 		result, err := s.SyncFullMonth(year, month, monthProgressCallback)
 		if err != nil {
 			return results, fmt.Errorf("failed to sync month %04d-%02d: %w", year, month, err)
@@ -377,22 +377,22 @@ func (s *ZhipuAPIService) BillItemToMap(item *BillItem) (map[string]interface{},
 	return billMap, nil
 }
 
-// GetAPIToken returns the current API token
+// GetAPIToken returns current API token
 func (s *ZhipuAPIService) GetAPIToken() string {
 	return s.apiToken
 }
 
-// SetAPIToken updates the API token
+// SetAPIToken updates API token
 func (s *ZhipuAPIService) SetAPIToken(token string) {
 	s.apiToken = token
 }
 
-// GetBaseURL returns the base URL
+// GetBaseURL returns base URL
 func (s *ZhipuAPIService) GetBaseURL() string {
 	return s.baseURL
 }
 
-// EstimateSyncTime estimates the time required for syncing
+// EstimateSyncTime estimates time required for syncing
 func (s *ZhipuAPIService) EstimateSyncTime(months int) time.Duration {
 	// Rough estimation: 30 seconds per month
 	// This can be adjusted based on actual performance
@@ -408,9 +408,9 @@ func (s *ZhipuAPIService) GetSyncStatistics(dbService *DatabaseService) (map[str
 	}
 
 	stats := map[string]interface{}{
-		"last_sync_time":    nil,
-		"last_sync_status":  "never",
-		"last_sync_records": 0,
+		"last_sync_time":     nil,
+		"last_sync_status":   "never",
+		"last_sync_records":  0,
 		"last_sync_duration": 0,
 	}
 

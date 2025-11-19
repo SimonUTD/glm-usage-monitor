@@ -242,3 +242,29 @@ func FormatChargeUnit(unit float64, symbol string) string {
 	}
 	return fmt.Sprintf("%.2f %s", unit, symbol)
 }
+
+// MIDDLEWARE_01: 统一时间格式化函数
+// FormatDateTime 统一日期时间格式化为YYYY-MM-DD HH:mm:ss
+func FormatDateTime(t time.Time) string {
+	return t.Format("2006-01-02 15:04:05")
+}
+
+// FormatDate 统一日期格式化为YYYY-MM-DD
+func FormatDate(t time.Time) string {
+	return t.Format("2006-01-02")
+}
+
+// FormatDateTimeForAPI 为API响应格式化日期时间
+func FormatDateTimeForAPI(t time.Time) string {
+	return t.Format("2006-01-02 15:04:05")
+}
+
+// FormatDateForAPI 为API响应格式化日期
+func FormatDateForAPI(t time.Time) string {
+	return t.Format("2006-01-02")
+}
+
+// FormatTimeForAPI 为API响应格式化时间
+func FormatTimeForAPI(t time.Time) string {
+	return t.Format("15:04:05")
+}

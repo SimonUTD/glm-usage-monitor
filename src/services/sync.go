@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"glm-usage-monitor/models"
+	"strconv"
 	"time"
 )
 
@@ -267,12 +268,33 @@ func (s *DatabaseService) SetAutoSyncConfig(key, value, description string) erro
 	return nil
 }
 
-// GetAllAutoSyncConfigs retrieves all configuration values
+// GetAllAutoSyncConfigs retrieves all configuration values (DB_03: 适配新结构)
 func (s *DatabaseService) GetAllAutoSyncConfigs() ([]models.AutoSyncConfig, error) {
+	// 检查表结构，如果还是旧的键值对结构，需要转换
+	var isOldStructure bool
+
+	// 尝试查询新结构的字段
+	checkQuery := "SELECT COUNT(*) FROM pragma_table_info('auto_sync_config') WHERE name = 'enabled'"
+	var count int
+	err := s.db.QueryRow(checkQuery).Scan(&count)
+	if err != nil {
+		// 如果pragma查询失败，假设是新结构
+		isOldStructure = false
+	} else {
+		isOldStructure = count == 0
+	}
+
+	if isOldStructure {
+		// 从旧结构转换
+		return s.convertOldConfigToNew()
+	}
+
+	// 查询新结构
 	query := `
-		SELECT id, config_key, config_value, description, updated_at
+		SELECT id, enabled, frequency_seconds, last_sync_time, next_sync_time,
+		       sync_type, billing_month, max_retries, retry_delay, created_at, updated_at
 		FROM auto_sync_config
-		ORDER BY config_key
+		ORDER BY id
 	`
 
 	rows, err := s.db.Query(query)
@@ -284,7 +306,12 @@ func (s *DatabaseService) GetAllAutoSyncConfigs() ([]models.AutoSyncConfig, erro
 	var configs []models.AutoSyncConfig
 	for rows.Next() {
 		var config models.AutoSyncConfig
-		err := rows.Scan(&config.ID, &config.ConfigKey, &config.ConfigValue, &config.Description, &config.UpdatedAt)
+		err := rows.Scan(
+			&config.ID, &config.Enabled, &config.FrequencySeconds,
+			&config.LastSyncTime, &config.NextSyncTime, &config.SyncType,
+			&config.BillingMonth, &config.MaxRetries, &config.RetryDelay,
+			&config.CreatedAt, &config.UpdatedAt,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan auto sync config: %w", err)
 		}
@@ -292,6 +319,47 @@ func (s *DatabaseService) GetAllAutoSyncConfigs() ([]models.AutoSyncConfig, erro
 	}
 
 	return configs, nil
+}
+
+// convertOldConfigToNew converts old key-value config to new structured config
+func (s *DatabaseService) convertOldConfigToNew() ([]models.AutoSyncConfig, error) {
+	// 获取旧配置
+	oldQuery := "SELECT config_key, config_value FROM auto_sync_config"
+	rows, err := s.db.Query(oldQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query old auto sync configs: %w", err)
+	}
+	defer rows.Close()
+
+	// 默认配置
+	config := models.AutoSyncConfig{
+		Enabled:          false,
+		FrequencySeconds: 300, // 5 minutes
+		SyncType:         "incremental",
+		MaxRetries:       3,
+		RetryDelay:       60, // 1 minute
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+
+	// 解析旧配置值
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			continue
+		}
+
+		switch key {
+		case "enabled":
+			config.Enabled = value == "true"
+		case "frequency_seconds":
+			if freq, err := strconv.Atoi(value); err == nil {
+				config.FrequencySeconds = freq
+			}
+		}
+	}
+
+	return []models.AutoSyncConfig{config}, nil
 }
 
 // GetAutoSyncStatus retrieves the current auto-sync status

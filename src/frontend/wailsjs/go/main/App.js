@@ -6,8 +6,16 @@ export function CheckAPIConnectivity() {
   return window['go']['main']['App']['CheckAPIConnectivity']();
 }
 
+export function CleanOldSyncHistory(arg1) {
+  return window['go']['main']['App']['CleanOldSyncHistory'](arg1);
+}
+
 export function CleanupStaleSyncs() {
   return window['go']['main']['App']['CleanupStaleSyncs']();
+}
+
+export function DeleteAllExpenseBills() {
+  return window['go']['main']['App']['DeleteAllExpenseBills']();
 }
 
 export function DeleteBill(arg1) {
@@ -134,8 +142,8 @@ export function GetRunningSyncStatus() {
   return window['go']['main']['App']['GetRunningSyncStatus']();
 }
 
-export function GetStats(arg1, arg2) {
-  return window['go']['main']['App']['GetStats'](arg1, arg2);
+export function GetStats(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GetStats'](arg1, arg2, arg3);
 }
 
 export function GetSyncHistory(arg1, arg2, arg3) {
@@ -184,6 +192,10 @@ export function Greet(arg1) {
 
 export function SaveAutoSyncConfig(arg1) {
   return window['go']['main']['App']['SaveAutoSyncConfig'](arg1);
+}
+
+export function SaveSyncHistory(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['SaveSyncHistory'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function SaveToken(arg1, arg2) {

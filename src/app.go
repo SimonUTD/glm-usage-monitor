@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"glm-usage-monitor/models"
+	"glm-usage-monitor/services"
 	"log"
 	"math"
-	"glm-usage-monitor/services"
-	"glm-usage-monitor/models"
+	"strconv"
+	"time"
 )
 
 // App struct
@@ -111,9 +113,9 @@ func (a *App) GetAPIService() *services.APIService {
 
 // GetApiUsageProgress returns API usage progress with growth rate
 func (a *App) GetApiUsageProgress() (map[string]interface{}, error) {
-	// For now, use a reasonable daily limit based on GLM Coding Pro typical limits
-	// TODO: Get this from API or user configuration
-	dailyLimit := 1000
+	// IPC_05: 从动态配置获取限制，移除硬编码
+	// 从配置服务获取每日限制
+	dailyLimit := a.getDynamicDailyLimit()
 
 	result := map[string]interface{}{
 		"percentage": 0,
@@ -396,7 +398,7 @@ func (a *App) GetDailyUsage(days int) (map[string]interface{}, error) {
 
 	// Group by date
 	dailyData := make(map[string]struct {
-		callCount int
+		callCount  int
 		tokenUsage int
 	})
 
@@ -408,10 +410,10 @@ func (a *App) GetDailyUsage(days int) (map[string]interface{}, error) {
 			dailyData[date] = data
 		} else {
 			dailyData[date] = struct {
-				callCount int
+				callCount  int
 				tokenUsage int
 			}{
-				callCount: int(record.ChargeCount),
+				callCount:  int(record.ChargeCount),
 				tokenUsage: int(record.ChargeUnit),
 			}
 		}
@@ -442,7 +444,7 @@ func (a *App) GetMonthlyUsage() (map[string]interface{}, error) {
 
 	// Group by date
 	dailyData := make(map[string]struct {
-		callCount int
+		callCount  int
 		tokenUsage int
 	})
 
@@ -454,10 +456,10 @@ func (a *App) GetMonthlyUsage() (map[string]interface{}, error) {
 			dailyData[date] = data
 		} else {
 			dailyData[date] = struct {
-				callCount int
+				callCount  int
 				tokenUsage int
 			}{
-				callCount: int(record.ChargeCount),
+				callCount:  int(record.ChargeCount),
 				tokenUsage: int(record.ChargeUnit),
 			}
 		}
@@ -505,7 +507,7 @@ func (a *App) GetProducts() ([]string, error) {
 func (a *App) GetProductNames() ([]string, error) {
 	// 从数据库获取产品名称列表
 	db := a.database.GetDB()
-	
+
 	query := `
 		SELECT DISTINCT model_product_name 
 		FROM expense_bills 
@@ -513,13 +515,13 @@ func (a *App) GetProductNames() ([]string, error) {
 		  AND model_product_name != ''
 		ORDER BY model_product_name
 	`
-	
+
 	rows, err := db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get product names: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var productNames []string
 	for rows.Next() {
 		var name string
@@ -529,7 +531,7 @@ func (a *App) GetProductNames() ([]string, error) {
 		}
 		productNames = append(productNames, name)
 	}
-	
+
 	// 如果没有数据，返回默认产品列表
 	if len(productNames) == 0 {
 		productNames = []string{
@@ -541,7 +543,7 @@ func (a *App) GetProductNames() ([]string, error) {
 			"glm-4.6 32-200k",
 		}
 	}
-	
+
 	return productNames, nil
 }
 
@@ -642,13 +644,41 @@ func (a *App) ForceResetSyncStatus() (map[string]interface{}, error) {
 // ========== 新增的异步同步方法 ==========
 
 // StartSync 启动异步同步任务
-func (a *App) StartSync(billingMonth string) (*services.StartSyncResponse, error) {
-	return a.apiService.StartSync(billingMonth)
+func (a *App) StartSync(billingMonth string) (*services.SyncResult, error) {
+	return a.apiService.SyncBills(billingMonth, "full", nil)
 }
 
 // GetSyncStatusAsync 获取异步同步状态
 func (a *App) GetSyncStatusAsync() (*services.SyncStatusResponse, error) {
-	return a.apiService.GetSyncStatus()
+	status, err := a.apiService.GetSyncStatus()
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert models.SyncStatus to services.SyncStatusResponse
+	// Use default values for fields that don't exist in models.SyncStatus
+	var lastSyncStatus string
+	if status.LastSyncStatus != nil {
+		lastSyncStatus = *status.LastSyncStatus
+	}
+
+	var lastSyncTime time.Time
+	if status.LastSyncTime != nil {
+		lastSyncTime = *status.LastSyncTime
+	}
+
+	return &services.SyncStatusResponse{
+		Syncing:      status.IsSyncing,
+		Progress:     float64(status.Progress),
+		CurrentPage:  0, // Not available in models.SyncStatus
+		TotalPages:   0, // Not available in models.SyncStatus
+		SyncedCount:  0, // Not available in models.SyncStatus
+		FailedCount:  0, // Not available in models.SyncStatus
+		TotalCount:   0, // Not available in models.SyncStatus
+		Message:      status.Message,
+		LastSyncTime: lastSyncTime,
+		Status:       lastSyncStatus,
+	}, nil
 }
 
 // ========== 自动同步API方法 ==========
@@ -665,18 +695,12 @@ func (a *App) SaveAutoSyncConfig(config *models.AutoSyncConfig) error {
 
 // TriggerAutoSync 立即触发一次自动同步
 func (a *App) TriggerAutoSync() (map[string]interface{}, error) {
-	err := a.apiService.TriggerAutoSync()
+	result, err := a.apiService.TriggerAutoSync()
 	if err != nil {
-		return map[string]interface{}{
-			"success": false,
-			"message": "触发自动同步失败: " + err.Error(),
-		}, err
+		return result, err
 	}
-	
-	return map[string]interface{}{
-		"success": true,
-		"message": "自动同步已触发",
-	}, nil
+
+	return result, nil
 }
 
 // GetAutoSyncStatus 获取自动同步状态
@@ -688,9 +712,31 @@ func (a *App) GetAutoSyncStatus() (map[string]interface{}, error) {
 			"message": "获取自动同步状态失败: " + err.Error(),
 		}, err
 	}
-	
+
 	status["success"] = true
 	return status, nil
 }
 
+// getDynamicDailyLimit 从动态配置获取每日限制 (IPC_05)
+func (a *App) getDynamicDailyLimit() int {
+	// 尝试从配置获取每日限制
+	config, err := a.apiService.GetConfig("daily_limit")
+	if err == nil && config != "" {
+		if limit, err := strconv.Atoi(config); err == nil {
+			return limit
+		}
+	}
 
+	// 如果配置不存在，返回默认值
+	return 1000
+}
+
+// CleanOldSyncHistory 清理指定天数前的同步历史记录 (MUTATION_01)
+func (a *App) CleanOldSyncHistory(days int) error {
+	return a.apiService.CleanOldSyncHistory(days)
+}
+
+// DeleteAllExpenseBills 清空所有账单数据 (MUTATION_02)
+func (a *App) DeleteAllExpenseBills() error {
+	return a.apiService.DeleteAllExpenseBills()
+}

@@ -79,6 +79,11 @@ func (db *Database) initSchema() error {
 		return fmt.Errorf("failed to create tables: %w", err)
 	}
 
+	// Run database migrations to handle schema changes
+	if err := RunMigrations(db.DB); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
 	// Then, migrate existing data by adding new columns if they don't exist
 	if err := db.migrateExistingTables(); err != nil {
 		return fmt.Errorf("failed to migrate existing tables: %w", err)
@@ -102,7 +107,7 @@ func (db *Database) createTables() error {
 	schemas := []string{
 		// expense_bills table - main table for storing GLM billing data
 		`CREATE TABLE IF NOT EXISTS expense_bills (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY,
 			charge_name TEXT,
 			charge_type TEXT,
 			model_name TEXT,
@@ -164,12 +169,18 @@ func (db *Database) createTables() error {
 			token_type TEXT
 		)`,
 
-		// api_tokens table - for storing API tokens
+		// api_tokens table - for storing API tokens (DB_02: 重新设计)
 		`CREATE TABLE IF NOT EXISTS api_tokens (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			token_name TEXT NOT NULL,
 			token_value TEXT NOT NULL,
+			provider TEXT,
+			token_type TEXT,
 			is_active INTEGER DEFAULT 1,
+			daily_limit INTEGER,
+			monthly_limit INTEGER,
+			expires_at DATETIME,
+			last_used_at DATETIME,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -188,12 +199,18 @@ func (db *Database) createTables() error {
 			total_pages INTEGER DEFAULT 0
 		)`,
 
-		// auto_sync_config table - for storing auto-sync configuration
+		// auto_sync_config table - for storing auto-sync configuration (DB_03: 重新设计)
 		`CREATE TABLE IF NOT EXISTS auto_sync_config (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			config_key TEXT UNIQUE NOT NULL,
-			config_value TEXT NOT NULL,
-			description TEXT,
+			enabled INTEGER DEFAULT 0,
+			frequency_seconds INTEGER DEFAULT 3600,
+			last_sync_time DATETIME,
+			next_sync_time DATETIME,
+			sync_type TEXT DEFAULT 'full',
+			billing_month TEXT,
+			max_retries INTEGER DEFAULT 3,
+			retry_delay INTEGER DEFAULT 5,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
@@ -224,6 +241,19 @@ func (db *Database) createTables() error {
 // migrateExistingTables adds new columns to existing tables
 func (db *Database) migrateExistingTables() error {
 	migrations := []string{
+		// === DB_01: 添加缺失的expense_bills字段 ===
+		"ALTER TABLE expense_bills ADD COLUMN billing_date TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN billing_time TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN customer_id TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN order_no TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN original_amount REAL",
+		"ALTER TABLE expense_bills ADD COLUMN original_cost_price REAL",
+		"ALTER TABLE expense_bills ADD COLUMN discount_type TEXT",
+		"ALTER TABLE expense_bills ADD COLUMN credit_pay_amount REAL",
+		"ALTER TABLE expense_bills ADD COLUMN third_party REAL",
+		"ALTER TABLE expense_bills ADD COLUMN cash_amount REAL",
+		"ALTER TABLE expense_bills ADD COLUMN api_usage INTEGER",
+
 		// === 模型信息字段 ===
 		"ALTER TABLE expense_bills ADD COLUMN api_key TEXT",
 		"ALTER TABLE expense_bills ADD COLUMN model_code TEXT",
@@ -231,7 +261,7 @@ func (db *Database) migrateExistingTables() error {
 		"ALTER TABLE expense_bills ADD COLUMN model_product_subtype TEXT",
 		"ALTER TABLE expense_bills ADD COLUMN model_product_code TEXT",
 		"ALTER TABLE expense_bills ADD COLUMN model_product_name TEXT",
-		
+
 		// === 支付和成本信息字段 ===
 		"ALTER TABLE expense_bills ADD COLUMN payment_type TEXT",
 		"ALTER TABLE expense_bills ADD COLUMN start_time TEXT",
@@ -243,7 +273,7 @@ func (db *Database) migrateExistingTables() error {
 		"ALTER TABLE expense_bills ADD COLUMN usage_exempt REAL",
 		"ALTER TABLE expense_bills ADD COLUMN usage_unit TEXT",
 		"ALTER TABLE expense_bills ADD COLUMN currency TEXT DEFAULT 'CNY'",
-		
+
 		// === 金额信息字段 ===
 		"ALTER TABLE expense_bills ADD COLUMN settlement_amount REAL",
 		"ALTER TABLE expense_bills ADD COLUMN gift_deduct_amount REAL DEFAULT 0",
@@ -253,7 +283,7 @@ func (db *Database) migrateExistingTables() error {
 		"ALTER TABLE expense_bills ADD COLUMN billing_status TEXT DEFAULT 'unpaid'",
 		"ALTER TABLE expense_bills ADD COLUMN invoicing_amount REAL DEFAULT 0",
 		"ALTER TABLE expense_bills ADD COLUMN invoiced_amount REAL DEFAULT 0",
-		
+
 		// === Token业务字段 ===
 		"ALTER TABLE expense_bills ADD COLUMN token_account_id TEXT",
 		"ALTER TABLE expense_bills ADD COLUMN token_resource_no TEXT",
@@ -261,6 +291,18 @@ func (db *Database) migrateExistingTables() error {
 		"ALTER TABLE expense_bills ADD COLUMN deduct_usage REAL DEFAULT 0",
 		"ALTER TABLE expense_bills ADD COLUMN deduct_after TEXT",
 		"ALTER TABLE expense_bills ADD COLUMN token_type TEXT",
+
+		// === DB_02: 为api_tokens表添加缺失字段 ===
+		"ALTER TABLE api_tokens ADD COLUMN provider TEXT",
+		"ALTER TABLE api_tokens ADD COLUMN token_type TEXT",
+		"ALTER TABLE api_tokens ADD COLUMN daily_limit INTEGER",
+		"ALTER TABLE api_tokens ADD COLUMN monthly_limit INTEGER",
+		"ALTER TABLE api_tokens ADD COLUMN expires_at DATETIME",
+		"ALTER TABLE api_tokens ADD COLUMN last_used_at DATETIME",
+
+		// === DB_05: 为membership_tier_limits表添加缺失字段 ===
+		"ALTER TABLE membership_tier_limits ADD COLUMN period_hours INTEGER",
+		"ALTER TABLE membership_tier_limits ADD COLUMN call_limit INTEGER",
 	}
 
 	for _, migration := range migrations {
@@ -309,7 +351,7 @@ func (db *Database) createIndexes() error {
 // insertDefaultConfigs inserts default configuration values
 func (db *Database) insertDefaultConfigs() error {
 	defaultConfigs := map[string]string{
-		"auto_sync_enabled":   "false",
+		"auto_sync_enabled":  "false",
 		"sync_interval":      "3600", // 1 hour in seconds
 		"last_sync_time":     "",
 		"sync_on_startup":    "false",
@@ -333,7 +375,7 @@ func (db *Database) insertDefaultConfigs() error {
 // getDefaultConfigDescription returns a description for default configuration keys
 func getDefaultConfigDescription(key string) string {
 	descriptions := map[string]string{
-		"auto_sync_enabled":   "Enable automatic data synchronization",
+		"auto_sync_enabled":  "Enable automatic data synchronization",
 		"sync_interval":      "Synchronization interval in seconds",
 		"last_sync_time":     "Timestamp of last successful synchronization",
 		"sync_on_startup":    "Sync data when application starts",

@@ -134,7 +134,7 @@ func (s *AutoSyncService) Stop() error {
 	}
 
 	s.running = false
-	
+
 	// 停止定时器
 	if s.ticker != nil {
 		s.ticker.Stop()
@@ -183,7 +183,7 @@ func (s *AutoSyncService) performAutoSync() error {
 	billingMonth := now.Format("2006-01")
 
 	// 调用同步服务启动同步
-	response, err := s.apiService.StartSync(billingMonth)
+	response, err := s.apiService.SyncBills(billingMonth, "full", nil)
 	if err != nil {
 		log.Printf("Auto sync failed to start: %v", err)
 		return err
@@ -200,7 +200,7 @@ func (s *AutoSyncService) performAutoSync() error {
 		log.Printf("Failed to update last sync time: %v", err)
 	}
 
-	log.Printf("Auto sync started successfully for month: %s, sync ID: %d", billingMonth, response.SyncID)
+	log.Printf("Auto sync started successfully for month: %s", billingMonth)
 	return nil
 }
 

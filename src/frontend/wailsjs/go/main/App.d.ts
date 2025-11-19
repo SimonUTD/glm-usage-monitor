@@ -7,9 +7,13 @@ import {main} from '../models';
 
 export function CheckAPIConnectivity():Promise<Record<string, any>>;
 
+export function CleanOldSyncHistory(arg1:number):Promise<void>;
+
 export function CleanupStaleSyncs():Promise<Record<string, any>>;
 
-export function DeleteBill(arg1:number):Promise<void>;
+export function DeleteAllExpenseBills():Promise<void>;
+
+export function DeleteBill(arg1:string):Promise<void>;
 
 export function DeleteToken(arg1:number):Promise<void>;
 
@@ -27,7 +31,7 @@ export function GetAutoSyncConfig():Promise<models.AutoSyncConfig>;
 
 export function GetAutoSyncStatus():Promise<Record<string, any>>;
 
-export function GetBillByID(arg1:number):Promise<models.ExpenseBill>;
+export function GetBillByID(arg1:string):Promise<models.ExpenseBill>;
 
 export function GetBills(arg1:any):Promise<models.PaginatedResult>;
 
@@ -71,7 +75,7 @@ export function GetRecentUsage(arg1:number):Promise<Array<models.ExpenseBill>>;
 
 export function GetRunningSyncStatus():Promise<Record<string, any>>;
 
-export function GetStats(arg1:time.Time,arg2:time.Time):Promise<models.StatsResponse>;
+export function GetStats(arg1:time.Time,arg2:time.Time,arg3:string):Promise<models.StatsResponse>;
 
 export function GetSyncHistory(arg1:string,arg2:number,arg3:number):Promise<models.PaginatedResult>;
 
@@ -97,15 +101,17 @@ export function Greet(arg1:string):Promise<string>;
 
 export function SaveAutoSyncConfig(arg1:models.AutoSyncConfig):Promise<void>;
 
+export function SaveSyncHistory(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number,arg6:any):Promise<Record<string, any>>;
+
 export function SaveToken(arg1:string,arg2:string):Promise<void>;
 
 export function SetConfig(arg1:string,arg2:string,arg3:string):Promise<void>;
 
-export function StartSync(arg1:string):Promise<services.StartSyncResponse>;
+export function StartSync(arg1:string):Promise<services.SyncResult>;
 
 export function StopAutoSync():Promise<Record<string, any>>;
 
-export function SyncBills(arg1:number,arg2:number):Promise<Record<string, any>>;
+export function SyncBills(arg1:string,arg2:string):Promise<Record<string, any>>;
 
 export function SyncRecentMonths(arg1:number):Promise<Record<string, any>>;
 

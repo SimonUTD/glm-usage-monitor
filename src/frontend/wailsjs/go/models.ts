@@ -40,9 +40,17 @@ export namespace models {
 	    id: number;
 	    token_name: string;
 	    token_value: string;
+	    provider: string;
+	    token_type: string;
 	    is_active: boolean;
+	    daily_limit?: number;
+	    monthly_limit?: number;
+	    expires_at?: time.Time;
+	    last_used_at?: time.Time;
 	    created_at: time.Time;
 	    updated_at: time.Time;
+	    usage_today?: number;
+	    usage_this_month?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new APIToken(source);
@@ -53,9 +61,17 @@ export namespace models {
 	        this.id = source["id"];
 	        this.token_name = source["token_name"];
 	        this.token_value = source["token_value"];
+	        this.provider = source["provider"];
+	        this.token_type = source["token_type"];
 	        this.is_active = source["is_active"];
+	        this.daily_limit = source["daily_limit"];
+	        this.monthly_limit = source["monthly_limit"];
+	        this.expires_at = this.convertValues(source["expires_at"], time.Time);
+	        this.last_used_at = this.convertValues(source["last_used_at"], time.Time);
 	        this.created_at = this.convertValues(source["created_at"], time.Time);
 	        this.updated_at = this.convertValues(source["updated_at"], time.Time);
+	        this.usage_today = source["usage_today"];
+	        this.usage_this_month = source["usage_this_month"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -78,14 +94,19 @@ export namespace models {
 	}
 	export class AutoSyncConfig {
 	    id: number;
-	    config_key: string;
-	    config_value: string;
-	    description?: string;
-	    updated_at: time.Time;
 	    enabled: boolean;
 	    frequency_seconds: number;
-	    last_sync_time?: string;
-	    next_sync_time?: string;
+	    last_sync_time?: time.Time;
+	    next_sync_time?: time.Time;
+	    sync_type: string;
+	    billing_month: string;
+	    max_retries: number;
+	    retry_delay: number;
+	    created_at: time.Time;
+	    updated_at: time.Time;
+	    is_running?: boolean;
+	    progress?: number;
+	    status_message?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AutoSyncConfig(source);
@@ -94,14 +115,19 @@ export namespace models {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.config_key = source["config_key"];
-	        this.config_value = source["config_value"];
-	        this.description = source["description"];
-	        this.updated_at = this.convertValues(source["updated_at"], time.Time);
 	        this.enabled = source["enabled"];
 	        this.frequency_seconds = source["frequency_seconds"];
-	        this.last_sync_time = source["last_sync_time"];
-	        this.next_sync_time = source["next_sync_time"];
+	        this.last_sync_time = this.convertValues(source["last_sync_time"], time.Time);
+	        this.next_sync_time = this.convertValues(source["next_sync_time"], time.Time);
+	        this.sync_type = source["sync_type"];
+	        this.billing_month = source["billing_month"];
+	        this.max_retries = source["max_retries"];
+	        this.retry_delay = source["retry_delay"];
+	        this.created_at = this.convertValues(source["created_at"], time.Time);
+	        this.updated_at = this.convertValues(source["updated_at"], time.Time);
+	        this.is_running = source["is_running"];
+	        this.progress = source["progress"];
+	        this.status_message = source["status_message"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -141,7 +167,7 @@ export namespace models {
 	    }
 	}
 	export class ExpenseBill {
-	    id: number;
+	    id: string;
 	    charge_name: string;
 	    charge_type: string;
 	    model_name: string;
@@ -163,6 +189,17 @@ export namespace models {
 	    time_window_end: time.Time;
 	    time_window: string;
 	    create_time: time.Time;
+	    billing_date: string;
+	    billing_time: string;
+	    customer_id: string;
+	    order_no: string;
+	    original_amount: number;
+	    original_cost_price: number;
+	    discount_type: string;
+	    credit_pay_amount: number;
+	    third_party: number;
+	    cash_amount: number;
+	    api_usage: number;
 	    api_key: string;
 	    model_code: string;
 	    model_product_type: string;
@@ -222,6 +259,17 @@ export namespace models {
 	        this.time_window_end = this.convertValues(source["time_window_end"], time.Time);
 	        this.time_window = source["time_window"];
 	        this.create_time = this.convertValues(source["create_time"], time.Time);
+	        this.billing_date = source["billing_date"];
+	        this.billing_time = source["billing_time"];
+	        this.customer_id = source["customer_id"];
+	        this.order_no = source["order_no"];
+	        this.original_amount = source["original_amount"];
+	        this.original_cost_price = source["original_cost_price"];
+	        this.discount_type = source["discount_type"];
+	        this.credit_pay_amount = source["credit_pay_amount"];
+	        this.third_party = source["third_party"];
+	        this.cash_amount = source["cash_amount"];
+	        this.api_usage = source["api_usage"];
 	        this.api_key = source["api_key"];
 	        this.model_code = source["model_code"];
 	        this.model_product_type = source["model_product_type"];
@@ -299,6 +347,8 @@ export namespace models {
 	    max_context_length?: number;
 	    features?: string;
 	    description?: string;
+	    period_hours?: number;
+	    call_limit?: number;
 	    updated_at: time.Time;
 	
 	    static createFrom(source: any = {}) {
@@ -315,6 +365,8 @@ export namespace models {
 	        this.max_context_length = source["max_context_length"];
 	        this.features = source["features"];
 	        this.description = source["description"];
+	        this.period_hours = source["period_hours"];
+	        this.call_limit = source["call_limit"];
 	        this.updated_at = this.convertValues(source["updated_at"], time.Time);
 	    }
 	
@@ -508,21 +560,51 @@ export namespace services {
 	
 	    }
 	}
-	export class StartSyncResponse {
+	export class SyncResult {
 	    success: boolean;
-	    sync_id: number;
 	    message: string;
+	    total_items: number;
+	    synced_items: number;
+	    failed_items: number;
+	    skipped_items: number;
+	    duration: number;
+	    error_message?: string;
+	    processed_bills?: models.ExpenseBill[];
 	
 	    static createFrom(source: any = {}) {
-	        return new StartSyncResponse(source);
+	        return new SyncResult(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.success = source["success"];
-	        this.sync_id = source["sync_id"];
 	        this.message = source["message"];
+	        this.total_items = source["total_items"];
+	        this.synced_items = source["synced_items"];
+	        this.failed_items = source["failed_items"];
+	        this.skipped_items = source["skipped_items"];
+	        this.duration = source["duration"];
+	        this.error_message = source["error_message"];
+	        this.processed_bills = this.convertValues(source["processed_bills"], models.ExpenseBill);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class SyncStatusResponse {
 	    syncing: boolean;

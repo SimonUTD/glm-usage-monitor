@@ -3,8 +3,8 @@ package services
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"glm-usage-monitor/models"
+	"log"
 	"strings"
 	"time"
 )
@@ -57,16 +57,16 @@ func (s *DatabaseService) CreateExpenseBill(bill *models.ExpenseBill) error {
 		bill.UseGroupID, bill.GroupID, bill.ChargeUnit, bill.ChargeCount, bill.ChargeUnitSymbol,
 		bill.TrialCashCost, bill.TransactionTime, bill.TimeWindowStart, bill.TimeWindowEnd,
 		bill.TimeWindow, bill.CreateTime,
-		
+
 		// 模型信息字段
 		bill.APIKey, bill.ModelCode, bill.ModelProductType, bill.ModelProductSubtype, bill.ModelProductCode, bill.ModelProductName,
-		
+
 		// 支付和成本信息字段
 		bill.PaymentType, bill.StartTime, bill.EndTime, bill.BusinessID, bill.CostPrice, bill.CostUnit, bill.UsageCount, bill.UsageExempt, bill.UsageUnit, bill.Currency,
-		
+
 		// 金额信息字段
 		bill.SettlementAmount, bill.GiftDeductAmount, bill.DueAmount, bill.PaidAmount, bill.UnpaidAmount, bill.BillingStatus, bill.InvoicingAmount, bill.InvoicedAmount,
-		
+
 		// Token业务字段
 		bill.TokenAccountID, bill.TokenResourceNo, bill.TokenResourceName, bill.DeductUsage, bill.DeductAfter, bill.TokenType,
 	)
@@ -207,7 +207,23 @@ func (s *DatabaseService) GetExpenseBills(filter *models.BillFilter) (*models.Pa
 			   discount_rate, cost_rate, cash_cost, billing_no, order_time,
 			   use_group_id, group_id, charge_unit, charge_count, charge_unit_symbol,
 			   trial_cash_cost, transaction_time, time_window_start, time_window_end,
-			   time_window, create_time
+			   time_window, create_time,
+			   
+			   -- DB_01: 缺失的关键字段
+			   billing_date, billing_time, customer_id, order_no, original_amount, original_cost_price,
+			   discount_type, credit_pay_amount, third_party, cash_amount, api_usage,
+			   
+			   -- 模型信息字段
+			   api_key, model_code, model_product_type, model_product_subtype, model_product_code, model_product_name,
+			   
+			   -- 支付和成本信息字段
+			   payment_type, start_time, end_time, business_id, cost_price, cost_unit, usage_count, usage_exempt, usage_unit, currency,
+			   
+			   -- 金额信息字段
+			   settlement_amount, gift_deduct_amount, due_amount, paid_amount, unpaid_amount, billing_status, invoicing_amount, invoiced_amount,
+			   
+			   -- Token业务字段
+			   token_account_id, token_resource_no, token_resource_name, deduct_usage, deduct_after, token_type
 		FROM expense_bills
 		WHERE %s
 		ORDER BY transaction_time DESC
@@ -231,6 +247,22 @@ func (s *DatabaseService) GetExpenseBills(filter *models.BillFilter) (*models.Pa
 			&bill.UseGroupID, &bill.GroupID, &bill.ChargeUnit, &bill.ChargeCount, &bill.ChargeUnitSymbol,
 			&bill.TrialCashCost, &bill.TransactionTime, &bill.TimeWindowStart, &bill.TimeWindowEnd,
 			&bill.TimeWindow, &bill.CreateTime,
+
+			// DB_01: 缺失的关键字段
+			&bill.BillingDate, &bill.BillingTime, &bill.CustomerID, &bill.OrderNo, &bill.OriginalAmount, &bill.OriginalCostPrice,
+			&bill.DiscountType, &bill.CreditPayAmount, &bill.ThirdParty, &bill.CashAmount, &bill.APIUsage,
+
+			// 模型信息字段
+			&bill.APIKey, &bill.ModelCode, &bill.ModelProductType, &bill.ModelProductSubtype, &bill.ModelProductCode, &bill.ModelProductName,
+
+			// 支付和成本信息字段
+			&bill.PaymentType, &bill.StartTime, &bill.EndTime, &bill.BusinessID, &bill.CostPrice, &bill.CostUnit, &bill.UsageCount, &bill.UsageExempt, &bill.UsageUnit, &bill.Currency,
+
+			// 金额信息字段
+			&bill.SettlementAmount, &bill.GiftDeductAmount, &bill.DueAmount, &bill.PaidAmount, &bill.UnpaidAmount, &bill.BillingStatus, &bill.InvoicingAmount, &bill.InvoicedAmount,
+
+			// Token业务字段
+			&bill.TokenAccountID, &bill.TokenResourceNo, &bill.TokenResourceName, &bill.DeductUsage, &bill.DeductAfter, &bill.TokenType,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan expense bill: %w", err)
@@ -258,13 +290,29 @@ func (s *DatabaseService) GetExpenseBills(filter *models.BillFilter) (*models.Pa
 }
 
 // GetExpenseBillByID retrieves a single expense bill by ID
-func (s *DatabaseService) GetExpenseBillByID(id int) (*models.ExpenseBill, error) {
+func (s *DatabaseService) GetExpenseBillByID(id string) (*models.ExpenseBill, error) {
 	query := `
 		SELECT id, charge_name, charge_type, model_name, use_group_name, group_name,
 			   discount_rate, cost_rate, cash_cost, billing_no, order_time,
 			   use_group_id, group_id, charge_unit, charge_count, charge_unit_symbol,
 			   trial_cash_cost, transaction_time, time_window_start, time_window_end,
-			   time_window, create_time
+			   time_window, create_time,
+			   
+			   -- DB_01: 缺失的关键字段
+			   billing_date, billing_time, customer_id, order_no, original_amount, original_cost_price,
+			   discount_type, credit_pay_amount, third_party, cash_amount, api_usage,
+			   
+			   -- 模型信息字段
+			   api_key, model_code, model_product_type, model_product_subtype, model_product_code, model_product_name,
+			   
+			   -- 支付和成本信息字段
+			   payment_type, start_time, end_time, business_id, cost_price, cost_unit, usage_count, usage_exempt, usage_unit, currency,
+			   
+			   -- 金额信息字段
+			   settlement_amount, gift_deduct_amount, due_amount, paid_amount, unpaid_amount, billing_status, invoicing_amount, invoiced_amount,
+			   
+			   -- Token业务字段
+			   token_account_id, token_resource_no, token_resource_name, deduct_usage, deduct_after, token_type
 		FROM expense_bills
 		WHERE id = ?
 	`
@@ -276,6 +324,22 @@ func (s *DatabaseService) GetExpenseBillByID(id int) (*models.ExpenseBill, error
 		&bill.UseGroupID, &bill.GroupID, &bill.ChargeUnit, &bill.ChargeCount, &bill.ChargeUnitSymbol,
 		&bill.TrialCashCost, &bill.TransactionTime, &bill.TimeWindowStart, &bill.TimeWindowEnd,
 		&bill.TimeWindow, &bill.CreateTime,
+
+		// DB_01: 缺失的关键字段
+		&bill.BillingDate, &bill.BillingTime, &bill.CustomerID, &bill.OrderNo, &bill.OriginalAmount, &bill.OriginalCostPrice,
+		&bill.DiscountType, &bill.CreditPayAmount, &bill.ThirdParty, &bill.CashAmount, &bill.APIUsage,
+
+		// 模型信息字段
+		&bill.APIKey, &bill.ModelCode, &bill.ModelProductType, &bill.ModelProductSubtype, &bill.ModelProductCode, &bill.ModelProductName,
+
+		// 支付和成本信息字段
+		&bill.PaymentType, &bill.StartTime, &bill.EndTime, &bill.BusinessID, &bill.CostPrice, &bill.CostUnit, &bill.UsageCount, &bill.UsageExempt, &bill.UsageUnit, &bill.Currency,
+
+		// 金额信息字段
+		&bill.SettlementAmount, &bill.GiftDeductAmount, &bill.DueAmount, &bill.PaidAmount, &bill.UnpaidAmount, &bill.BillingStatus, &bill.InvoicingAmount, &bill.InvoicedAmount,
+
+		// Token业务字段
+		&bill.TokenAccountID, &bill.TokenResourceNo, &bill.TokenResourceName, &bill.DeductUsage, &bill.DeductAfter, &bill.TokenType,
 	)
 
 	if err != nil {
@@ -289,7 +353,7 @@ func (s *DatabaseService) GetExpenseBillByID(id int) (*models.ExpenseBill, error
 }
 
 // DeleteExpenseBill deletes an expense bill by ID
-func (s *DatabaseService) DeleteExpenseBill(id int) error {
+func (s *DatabaseService) DeleteExpenseBill(id string) error {
 	query := "DELETE FROM expense_bills WHERE id = ?"
 	result, err := s.db.Exec(query, id)
 	if err != nil {
@@ -315,7 +379,23 @@ func (s *DatabaseService) GetExpenseBillsByBillingNo(billingNo string) ([]models
 			   discount_rate, cost_rate, cash_cost, billing_no, order_time,
 			   use_group_id, group_id, charge_unit, charge_count, charge_unit_symbol,
 			   trial_cash_cost, transaction_time, time_window_start, time_window_end,
-			   time_window, create_time
+			   time_window, create_time,
+			   
+			   -- DB_01: 缺失的关键字段
+			   billing_date, billing_time, customer_id, order_no, original_amount, original_cost_price,
+			   discount_type, credit_pay_amount, third_party, cash_amount, api_usage,
+			   
+			   -- 模型信息字段
+			   api_key, model_code, model_product_type, model_product_subtype, model_product_code, model_product_name,
+			   
+			   -- 支付和成本信息字段
+			   payment_type, start_time, end_time, business_id, cost_price, cost_unit, usage_count, usage_exempt, usage_unit, currency,
+			   
+			   -- 金额信息字段
+			   settlement_amount, gift_deduct_amount, due_amount, paid_amount, unpaid_amount, billing_status, invoicing_amount, invoiced_amount,
+			   
+			   -- Token业务字段
+			   token_account_id, token_resource_no, token_resource_name, deduct_usage, deduct_after, token_type
 		FROM expense_bills
 		WHERE billing_no = ?
 		ORDER BY transaction_time DESC
@@ -336,6 +416,22 @@ func (s *DatabaseService) GetExpenseBillsByBillingNo(billingNo string) ([]models
 			&bill.UseGroupID, &bill.GroupID, &bill.ChargeUnit, &bill.ChargeCount, &bill.ChargeUnitSymbol,
 			&bill.TrialCashCost, &bill.TransactionTime, &bill.TimeWindowStart, &bill.TimeWindowEnd,
 			&bill.TimeWindow, &bill.CreateTime,
+
+			// DB_01: 缺失的关键字段
+			&bill.BillingDate, &bill.BillingTime, &bill.CustomerID, &bill.OrderNo, &bill.OriginalAmount, &bill.OriginalCostPrice,
+			&bill.DiscountType, &bill.CreditPayAmount, &bill.ThirdParty, &bill.CashAmount, &bill.APIUsage,
+
+			// 模型信息字段
+			&bill.APIKey, &bill.ModelCode, &bill.ModelProductType, &bill.ModelProductSubtype, &bill.ModelProductCode, &bill.ModelProductName,
+
+			// 支付和成本信息字段
+			&bill.PaymentType, &bill.StartTime, &bill.EndTime, &bill.BusinessID, &bill.CostPrice, &bill.CostUnit, &bill.UsageCount, &bill.UsageExempt, &bill.UsageUnit, &bill.Currency,
+
+			// 金额信息字段
+			&bill.SettlementAmount, &bill.GiftDeductAmount, &bill.DueAmount, &bill.PaidAmount, &bill.UnpaidAmount, &bill.BillingStatus, &bill.InvoicingAmount, &bill.InvoicedAmount,
+
+			// Token业务字段
+			&bill.TokenAccountID, &bill.TokenResourceNo, &bill.TokenResourceName, &bill.DeductUsage, &bill.DeductAfter, &bill.TokenType,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan expense bill: %w", err)
@@ -589,7 +685,7 @@ func (s *DatabaseService) updateExpenseBillInTx(tx *sql.Tx, bill *models.Expense
 // GetCurrentMembershipTier 获取当前用户的会员等级
 func (s *DatabaseService) GetCurrentMembershipTier() (string, error) {
 	db := s.db
-	
+
 	// 从expense_bills表获取最新的token_resource_name
 	query := `
 		SELECT token_resource_name 
@@ -599,7 +695,7 @@ func (s *DatabaseService) GetCurrentMembershipTier() (string, error) {
 		ORDER BY transaction_time DESC 
 		LIMIT 1
 	`
-	
+
 	var tokenResourceName string
 	err := db.QueryRow(query).Scan(&tokenResourceName)
 	if err != nil {
@@ -608,7 +704,7 @@ func (s *DatabaseService) GetCurrentMembershipTier() (string, error) {
 		}
 		return "", fmt.Errorf("failed to get current membership tier: %w", err)
 	}
-	
+
 	// 智能匹配会员等级
 	tier := s.matchMembershipTier(tokenResourceName)
 	return tier, nil
@@ -618,7 +714,7 @@ func (s *DatabaseService) GetCurrentMembershipTier() (string, error) {
 func (s *DatabaseService) matchMembershipTier(tokenResourceName string) string {
 	// 转换为小写便于匹配
 	name := strings.ToLower(tokenResourceName)
-	
+
 	// 匹配规则
 	if strings.Contains(name, "lite") {
 		return "lite"
@@ -631,7 +727,61 @@ func (s *DatabaseService) matchMembershipTier(tokenResourceName string) string {
 	} else if strings.Contains(name, "free") || strings.Contains(name, "免费") {
 		return "free"
 	}
-	
+
 	// 默认返回pro（如果无法匹配）
 	return "pro"
+}
+
+// ========== MUTATION_01: 清理旧同步历史功能缺失 ==========
+
+// CleanOldSyncHistory 清理指定天数前的同步历史记录 (MUTATION_01)
+func (s *DatabaseService) CleanOldSyncHistory(days int) error {
+	cutoffTime := time.Now().AddDate(0, 0, -days)
+	query := "DELETE FROM sync_history WHERE sync_time < ?"
+	_, err := s.db.Exec(query, cutoffTime)
+	if err != nil {
+		return fmt.Errorf("failed to clean old sync history: %w", err)
+	}
+
+	log.Printf("Cleaned sync history older than %d days", days)
+	return nil
+}
+
+// ========== MUTATION_02: 清空账单数据功能缺失 ==========
+
+// DeleteAllExpenseBills 清空所有账单数据 (MUTATION_02)
+func (s *DatabaseService) DeleteAllExpenseBills() error {
+	query := "DELETE FROM expense_bills"
+	_, err := s.db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to delete all expense bills: %w", err)
+	}
+
+	log.Printf("Deleted all expense bills data")
+	return nil
+}
+
+// ========== SyncHistory Operations ==========
+
+// SaveSyncHistory saves a sync history record
+func (s *DatabaseService) SaveSyncHistory(history *models.SyncHistory) error {
+	query := `
+		INSERT INTO sync_history (
+			sync_type, start_time, end_time, status, records_synced,
+			error_message, total_records, page_synced, total_pages,
+			billing_month, failed_count, sync_time, duration, message
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	_, err := s.db.Exec(query,
+		history.SyncType, history.StartTime, history.EndTime, history.Status, history.RecordsSynced,
+		history.ErrorMessage, history.TotalRecords, history.PageSynced, history.TotalPages,
+		history.BillingMonth, history.FailedCount, history.SyncTime, history.Duration, history.Message,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to save sync history: %w", err)
+	}
+
+	return nil
 }
