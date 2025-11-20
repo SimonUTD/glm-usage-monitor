@@ -105,7 +105,7 @@ func (s *StatisticsService) GetHourlyUsage(startDate, endDate *time.Time) ([]mod
 				WHEN transaction_time >= DATETIME('now', '-3 hours') AND transaction_time < DATETIME('now', '-2 hours') THEN -2
 				WHEN transaction_time >= DATETIME('now', '-2 hours') AND transaction_time < DATETIME('now', '-1 hours') THEN -1
 				WHEN transaction_time >= DATETIME('now', '-1 hours') THEN 0
-				ELSE strftime('%H', transaction_time)
+				ELSE strftime('%%H', transaction_time)
 			END as hour,
 			COUNT(*) as call_count,
 			COALESCE(SUM(charge_unit), 0) as token_usage,

@@ -116,10 +116,10 @@ type SyncHistory struct {
 	BillingMonth  string     `json:"billing_month" db:"billing_month"`
 	FailedCount   int        `json:"failed_count" db:"failed_count"`
 
-	// === DB_07: 新增缺失字段 ===
-	SyncTime time.Time `json:"sync_time" db:"sync_time"`
-	Duration int       `json:"duration" db:"duration"`
-	Message  string    `json:"message" db:"message"`
+	// === DB_07: 新增缺失字段（使用COALESCE处理NULL值，所以不需要指针类型） ===
+	SyncTime time.Time `json:"sync_time" db:"sync_time"` // 使用COALESCE(sync_time, start_time)处理
+	Duration int       `json:"duration" db:"duration"`   // 使用COALESCE(duration, 0)处理
+	Message  string    `json:"message" db:"message"`     // 使用COALESCE(message, '')处理
 }
 
 // AutoSyncConfig represents auto_sync_config table structure (DB_03: 重新设计)
@@ -130,7 +130,7 @@ type AutoSyncConfig struct {
 	LastSyncTime     *time.Time `json:"last_sync_time" db:"last_sync_time"`       // 最后同步时间
 	NextSyncTime     *time.Time `json:"next_sync_time" db:"next_sync_time"`       // 下次同步时间
 	SyncType         string     `json:"sync_type" db:"sync_type"`                 // 同步类型 (full, incremental)
-	BillingMonth     string     `json:"billing_month" db:"billing_month"`         // 账单月份
+	BillingMonth     *string    `json:"billing_month" db:"billing_month"`         // 账单月份（可为NULL）
 	MaxRetries       int        `json:"max_retries" db:"max_retries"`             // 最大重试次数
 	RetryDelay       int        `json:"retry_delay" db:"retry_delay"`             // 重试延迟（秒）
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`               // 创建时间

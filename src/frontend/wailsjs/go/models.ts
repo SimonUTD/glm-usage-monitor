@@ -99,7 +99,7 @@ export namespace models {
 	    last_sync_time?: time.Time;
 	    next_sync_time?: time.Time;
 	    sync_type: string;
-	    billing_month: string;
+	    billing_month?: string;
 	    max_retries: number;
 	    retry_delay: number;
 	    created_at: time.Time;

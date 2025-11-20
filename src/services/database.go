@@ -477,63 +477,56 @@ func (s *DatabaseService) GetExpenseBillsByBillingNo(billingNo string) ([]models
 
 // ========== APIToken Operations ==========
 
-// SaveAPIToken saves an API token
+// SaveAPIToken saves an API token (single token design)
 func (s *DatabaseService) SaveAPIToken(token *models.APIToken) error {
-	// Start transaction
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to start transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	// Set all existing tokens to inactive
-	_, err = tx.Exec("UPDATE api_tokens SET is_active = 0")
-	if err != nil {
-		return fmt.Errorf("failed to deactivate existing tokens: %w", err)
-	}
-
-	// Insert new token as active with all fields
+	// 使用INSERT OR REPLACE简化逻辑：如果存在就替换，不存在就插入
 	query := `
-		INSERT INTO api_tokens (
-			token_name, token_value, provider, token_type, is_active,
+		INSERT OR REPLACE INTO api_tokens (
+			id, token_name, token_value, provider, token_type, is_active,
 			daily_limit, monthly_limit, expires_at, last_used_at,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+		) VALUES (
+			1, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?
+		)
 	`
 
-	_, err = tx.Exec(query,
+	_, err := s.db.Exec(query,
 		token.TokenName, token.TokenValue, token.Provider, token.TokenType,
 		token.DailyLimit, token.MonthlyLimit, token.ExpiresAt, token.LastUsedAt,
 		token.CreatedAt, token.UpdatedAt)
 	if err != nil {
-		return fmt.Errorf("failed to save new API token: %w", err)
+		return fmt.Errorf("failed to save API token: %w", err)
 	}
 
-	// Commit transaction
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
+	log.Printf("DEBUG: Successfully saved/updated token")
 	return nil
 }
 
-// GetActiveAPIToken retrieves the active API token
+// GetActiveAPIToken retrieves the API token (single token design)
 func (s *DatabaseService) GetActiveAPIToken() (*models.APIToken, error) {
 	query := `
-		SELECT id, token_name, token_value, is_active, created_at, updated_at
+		SELECT id, token_name, token_value,
+			   CASE WHEN provider IS NULL THEN '' ELSE provider END as provider,
+			   CASE WHEN token_type IS NULL THEN '' ELSE token_type END as token_type,
+			   is_active,
+			   daily_limit, monthly_limit, expires_at, last_used_at,
+			   created_at, updated_at
 		FROM api_tokens
-		WHERE is_active = 1
 		ORDER BY updated_at DESC
 		LIMIT 1
 	`
 
 	var token models.APIToken
-	err := s.db.QueryRow(query).Scan(&token.ID, &token.TokenName, &token.TokenValue, &token.IsActive, &token.CreatedAt, &token.UpdatedAt)
+	err := s.db.QueryRow(query).Scan(
+		&token.ID, &token.TokenName, &token.TokenValue, &token.Provider, &token.TokenType, &token.IsActive,
+		&token.DailyLimit, &token.MonthlyLimit, &token.ExpiresAt, &token.LastUsedAt,
+		&token.CreatedAt, &token.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no active API token found")
+			// 没有token是正常情况，返回nil而不是错误
+			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get active API token: %w", err)
+		return nil, fmt.Errorf("failed to get API token: %w", err)
 	}
 
 	return &token, nil
@@ -542,7 +535,10 @@ func (s *DatabaseService) GetActiveAPIToken() (*models.APIToken, error) {
 // GetAllAPITokens retrieves all API tokens
 func (s *DatabaseService) GetAllAPITokens() ([]models.APIToken, error) {
 	query := `
-		SELECT id, token_name, token_value, provider, token_type, is_active,
+		SELECT id, token_name, token_value,
+			   CASE WHEN provider IS NULL THEN '' ELSE provider END as provider,
+			   CASE WHEN token_type IS NULL THEN '' ELSE token_type END as token_type,
+			   is_active,
 			   daily_limit, monthly_limit, expires_at, last_used_at,
 			   created_at, updated_at
 		FROM api_tokens
@@ -781,7 +777,7 @@ func (s *DatabaseService) matchMembershipTier(tokenResourceName string) string {
 // CleanOldSyncHistory 清理指定天数前的同步历史记录 (MUTATION_01)
 func (s *DatabaseService) CleanOldSyncHistory(days int) error {
 	cutoffTime := time.Now().AddDate(0, 0, -days)
-	query := "DELETE FROM sync_history WHERE sync_time < ?"
+	query := "DELETE FROM sync_history WHERE start_time < ?"
 	_, err := s.db.Exec(query, cutoffTime)
 	if err != nil {
 		return fmt.Errorf("failed to clean old sync history: %w", err)

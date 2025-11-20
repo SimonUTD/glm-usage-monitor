@@ -91,7 +91,7 @@ func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int)
 		// 如果有sync_type过滤，使用复合索引
 		countQuery = `
 			SELECT COUNT(*)
-			FROM sync_history INDEXED BY idx_sync_history_type_start_time
+			FROM sync_history
 			WHERE sync_type = ?
 		`
 		err = s.db.QueryRow(countQuery, syncType).Scan(&total)
@@ -107,12 +107,14 @@ func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int)
 	// 计算偏移量
 	offset := (pageNum - 1) * pageSize
 
-	// 优化查询：使用索引提示，确保使用复合索引
+	// 使用COALESCE处理可能为NULL的字段
 	query := fmt.Sprintf(`
 		SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
 		       total_records, page_synced, total_pages, billing_month, failed_count,
-		       sync_time, duration, message
-		FROM sync_history INDEXED BY idx_sync_history_type_start_time
+		       COALESCE(sync_time, start_time) as sync_time,
+		       COALESCE(duration, 0) as duration,
+		       COALESCE(message, '') as message
+		FROM sync_history
 		WHERE %s
 		ORDER BY start_time DESC
 		LIMIT ? OFFSET ?
@@ -125,20 +127,7 @@ func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int)
 
 	rows, err := s.db.Query(query, queryArgs...)
 	if err != nil {
-		// 如果索引提示失败，回退到普通查询
-		query = fmt.Sprintf(`
-			SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
-			       total_records, page_synced, total_pages
-			FROM sync_history
-			WHERE %s
-			ORDER BY start_time DESC
-			LIMIT ? OFFSET ?
-		`, whereClause)
-
-		rows, err = s.db.Query(query, queryArgs...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query sync history: %w", err)
-		}
+		return nil, fmt.Errorf("failed to query sync history: %w", err)
 	}
 	defer rows.Close()
 
@@ -178,12 +167,14 @@ func (s *DatabaseService) GetSyncHistory(syncType string, pageNum, pageSize int)
 
 // GetLatestSyncHistory retrieves the latest sync history record
 func (s *DatabaseService) GetLatestSyncHistory() (*models.SyncHistory, error) {
-	// 性能优化：使用索引来优化查询
+	// 首先尝试使用索引优化的查询（包含新字段）
 	query := `
 		SELECT id, sync_type, start_time, end_time, status, records_synced, error_message,
 		       total_records, page_synced, total_pages, billing_month, failed_count,
-		       sync_time, duration, message
-		FROM sync_history INDEXED BY idx_sync_history_type_start_time
+		       COALESCE(sync_time, start_time) as sync_time,
+		       COALESCE(duration, 0) as duration,
+		       COALESCE(message, '') as message
+		FROM sync_history
 		ORDER BY start_time DESC
 		LIMIT 1
 	`
@@ -216,8 +207,8 @@ func (s *DatabaseService) GetRunningSyncCount() (int, error) {
 	}
 
 	var count int
-	// 性能优化：使用status索引来加速查询
-	err = s.db.QueryRow("SELECT COUNT(*) FROM sync_history INDEXED BY idx_sync_history_status WHERE status = 'running'").Scan(&count)
+	// 查询运行中的同步数量（不使用索引提示，让SQLite自动选择）
+	err = s.db.QueryRow("SELECT COUNT(*) FROM sync_history WHERE status = 'running'").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count running syncs: %w", err)
 	}
@@ -249,35 +240,116 @@ func (s *DatabaseService) CleanupStaleRunningSyncs() error {
 
 // GetAutoSyncConfig retrieves a configuration value by key
 func (s *DatabaseService) GetAutoSyncConfig(key string) (string, error) {
-	query := "SELECT config_value FROM auto_sync_config WHERE config_key = ?"
-	var value string
-	err := s.db.QueryRow(query, key).Scan(&value)
+	// 检查表结构，如果还是旧的键值对结构，使用旧查询
+	var isOldStructure bool
+	checkQuery := "SELECT COUNT(*) FROM pragma_table_info('auto_sync_config') WHERE name = 'config_key'"
+	var count int
+	err := s.db.QueryRow(checkQuery).Scan(&count)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		// 如果pragma查询失败，假设是新结构
+		isOldStructure = false
+	} else {
+		isOldStructure = count > 0
+	}
+
+	if isOldStructure {
+		// 旧结构：使用 config_key/config_value
+		query := "SELECT config_value FROM auto_sync_config WHERE config_key = ?"
+		var value string
+		err := s.db.QueryRow(query, key).Scan(&value)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return "", fmt.Errorf("config key not found: %s", key)
+			}
+			return "", fmt.Errorf("failed to get config value: %w", err)
+		}
+		return value, nil
+	} else {
+		// 新结构：从结构化配置中获取值
+		config, err := s.GetAutoSyncConfigRecord()
+		if err != nil {
+			return "", fmt.Errorf("failed to get auto sync config: %w", err)
+		}
+
+		// 根据key返回对应的配置值
+		switch key {
+		case "daily_limit":
+			if config.ID != 0 {
+				// 从API token获取每日限制
+				token, err := s.GetActiveAPIToken()
+				if err == nil && token != nil && token.DailyLimit != nil {
+					return fmt.Sprintf("%d", *token.DailyLimit), nil
+				}
+			}
+			return "1000", nil // 默认值
+		case "auto_sync":
+			return fmt.Sprintf("%t", config.Enabled), nil
+		case "frequency_seconds":
+			return fmt.Sprintf("%d", config.FrequencySeconds), nil
+		case "sync_type":
+			return config.SyncType, nil
+		default:
 			return "", fmt.Errorf("config key not found: %s", key)
 		}
-		return "", fmt.Errorf("failed to get config value: %w", err)
 	}
-	return value, nil
 }
 
 // SetAutoSyncConfig saves a configuration value
 func (s *DatabaseService) SetAutoSyncConfig(key, value, description string) error {
-	query := `
-		INSERT INTO auto_sync_config (config_key, config_value, description, updated_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(config_key) DO UPDATE SET
-			config_value = excluded.config_value,
-			description = COALESCE(excluded.description, excluded.description),
-			updated_at = excluded.updated_at
-	`
-
-	_, err := s.db.Exec(query, key, value, description, time.Now())
+	// 检查表结构，如果还是旧的键值对结构，使用旧方法
+	var isOldStructure bool
+	checkQuery := "SELECT COUNT(*) FROM pragma_table_info('auto_sync_config') WHERE name = 'config_key'"
+	var count int
+	err := s.db.QueryRow(checkQuery).Scan(&count)
 	if err != nil {
-		return fmt.Errorf("failed to save config value: %w", err)
+		// 如果pragma查询失败，假设是新结构
+		isOldStructure = false
+	} else {
+		isOldStructure = count > 0
 	}
 
-	return nil
+	if isOldStructure {
+		// 旧结构：使用 config_key/config_value
+		query := `
+			INSERT INTO auto_sync_config (config_key, config_value, description, updated_at)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(config_key) DO UPDATE SET
+				config_value = excluded.config_value,
+				description = COALESCE(excluded.description, excluded.description),
+				updated_at = excluded.updated_at
+		`
+
+		_, err := s.db.Exec(query, key, value, description, time.Now())
+		if err != nil {
+			return fmt.Errorf("failed to save config value: %w", err)
+		}
+		return nil
+	} else {
+		// 新结构：更新结构化配置
+		config, err := s.GetAutoSyncConfigRecord()
+		if err != nil {
+			return fmt.Errorf("failed to get current auto sync config: %w", err)
+		}
+
+		// 根据key更新对应的配置值
+		switch key {
+		case "auto_sync":
+			if enabled, err := strconv.ParseBool(value); err == nil {
+				config.Enabled = enabled
+			}
+		case "frequency_seconds":
+			if freq, err := strconv.Atoi(value); err == nil {
+				config.FrequencySeconds = freq
+			}
+		case "sync_type":
+			config.SyncType = value
+		default:
+			return fmt.Errorf("config key not supported: %s", key)
+		}
+
+		// 保存更新后的配置
+		return s.SaveAutoSyncConfigRecord(config)
+	}
 }
 
 // GetAllAutoSyncConfigs retrieves all configuration values (DB_03: 适配新结构)
@@ -318,15 +390,23 @@ func (s *DatabaseService) GetAllAutoSyncConfigs() ([]models.AutoSyncConfig, erro
 	var configs []models.AutoSyncConfig
 	for rows.Next() {
 		var config models.AutoSyncConfig
+		var billingMonth sql.NullString
 		err := rows.Scan(
 			&config.ID, &config.Enabled, &config.FrequencySeconds,
 			&config.LastSyncTime, &config.NextSyncTime, &config.SyncType,
-			&config.BillingMonth, &config.MaxRetries, &config.RetryDelay,
+			&billingMonth, &config.MaxRetries, &config.RetryDelay,
 			&config.CreatedAt, &config.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan auto sync config: %w", err)
 		}
+
+		// 处理可能为NULL的billing_month字段
+		if billingMonth.Valid {
+			billingMonthStr := billingMonth.String
+			config.BillingMonth = &billingMonthStr
+		}
+
 		configs = append(configs, config)
 	}
 

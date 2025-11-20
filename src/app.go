@@ -27,24 +27,30 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	log.Printf("DEBUG: Application startup beginning...")
 
 	// Initialize database
+	log.Printf("DEBUG: Initializing database...")
 	db, err := NewDatabase()
 	if err != nil {
+		log.Printf("DEBUG: Database initialization failed: %v", err)
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
+	log.Printf("DEBUG: Database initialized successfully")
 
 	// 执行数据库迁移
-	log.Println("Running database migrations...")
+	log.Printf("DEBUG: Running database migrations...")
 	if err := RunMigrations(db.GetDB()); err != nil {
+		log.Printf("DEBUG: Database migrations failed: %v", err)
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
-	log.Println("Database migrations completed")
+	log.Printf("DEBUG: Database migrations completed successfully")
 
 	a.database = db
 	a.apiService = services.NewAPIService(db)
 
 	// Cleanup any stale running syncs on startup
+	log.Printf("DEBUG: Cleaning up stale syncs...")
 	err = a.cleanupAllRunningSyncs()
 	if err != nil {
 		log.Printf("Warning: failed to cleanup running syncs on startup: %v", err)
@@ -52,7 +58,7 @@ func (a *App) startup(ctx context.Context) {
 		log.Println("Cleaned up stale sync records on startup")
 	}
 
-	log.Println("Database and API service initialized successfully")
+	log.Printf("DEBUG: Application startup completed successfully")
 }
 
 // cleanupAllRunningSyncs marks all running syncs as failed (called on startup)

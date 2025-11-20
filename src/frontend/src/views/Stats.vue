@@ -493,6 +493,24 @@ const handleChartClick = (params) => {
 
 // 格式化函数已从formatters导入
 
+// 格式化统计数值（用于近1天、近1周、近1月的统计卡片）
+const formatDayStatsValue = (value, type) => {
+  if (value === null || value === undefined) {
+    return '0'
+  }
+  
+  switch (type) {
+    case 'call':
+      return value.toLocaleString()
+    case 'token':
+      return value.toLocaleString()
+    case 'cost':
+      return `¥${value.toFixed(2)}`
+    default:
+      return value.toString()
+  }
+}
+
 // 获取会员等级
 const fetchCurrentMembershipTier = async () => {
   try {

@@ -607,10 +607,6 @@ onMounted(() => {
   // 加载自动同步配置
   loadAutoSyncConfig()
 
-
-  // 加载同步历史记录
-  loadSyncHistory()
-
   // 页面加载时也检查一次
   restoreFullSyncStatus()
 })

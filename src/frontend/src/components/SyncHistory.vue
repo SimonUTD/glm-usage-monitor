@@ -93,16 +93,31 @@ const pagination = ref({
 const loadHistory = async () => {
   try {
     const { currentPage, pageSize } = pagination.value
-    const result = await api.getSyncHistory(props.syncType, pageSize, currentPage)
-    if (result.success) {
-      history.value = result.data
+    const result = await api.getSyncHistory(props.syncType, currentPage, pageSize)
+    if (result.success && result.data) {
+      // 确保 result.data 是数组
+      if (Array.isArray(result.data)) {
+        history.value = result.data
+      } else {
+        // 如果不是数组，设置为空数组
+        console.warn('API returned non-array data:', result.data)
+        history.value = []
+      }
+      
       // 如果后端返回总数，更新分页信息
-      if (result.total !== undefined) {
+      if (result.data && typeof result.data === 'object' && 'total' in result.data) {
+        pagination.value.total = result.data.total
+      } else if (result.total !== undefined) {
         pagination.value.total = result.total
       }
+    } else {
+      // 如果没有成功或没有数据，设置为空数组
+      history.value = []
     }
   } catch (error) {
     console.error(`加载${props.syncType === 'full' ? '全量' : '增量'}同步历史失败:`, error)
+    // 发生错误时也设置为空数组，避免 undefined
+    history.value = []
   }
 }
 

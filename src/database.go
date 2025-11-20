@@ -48,9 +48,12 @@ func NewDatabase() (*Database, error) {
 	}
 
 	// Initialize database schema
+	log.Printf("DEBUG: Initializing database schema...")
 	if err := database.initSchema(); err != nil {
+		log.Printf("DEBUG: Database schema initialization failed: %v", err)
 		return nil, fmt.Errorf("failed to initialize database schema: %w", err)
 	}
+	log.Printf("DEBUG: Database schema initialized successfully")
 
 	return database, nil
 }
@@ -350,25 +353,31 @@ func (db *Database) createIndexes() error {
 
 // insertDefaultConfigs inserts default configuration values
 func (db *Database) insertDefaultConfigs() error {
-	defaultConfigs := map[string]string{
-		"auto_sync_enabled":  "false",
-		"sync_interval":      "3600", // 1 hour in seconds
-		"last_sync_time":     "",
-		"sync_on_startup":    "false",
-		"max_retry_attempts": "3",
-		"retry_delay":        "5000", // 5 seconds in milliseconds
+	// 检查是否已有配置记录
+	var count int
+	err := db.DB.QueryRow("SELECT COUNT(*) FROM auto_sync_config").Scan(&count)
+	if err != nil {
+		log.Printf("DEBUG: Failed to check auto_sync_config count: %v", err)
+		// 继续执行，可能是表不存在
 	}
 
-	for key, value := range defaultConfigs {
-		_, err := db.DB.Exec(`
-			INSERT OR IGNORE INTO auto_sync_config (config_key, config_value, description)
-			VALUES (?, ?, ?)
-		`, key, value, getDefaultConfigDescription(key))
-		if err != nil {
-			return fmt.Errorf("failed to insert default config %s: %w", key, err)
-		}
+	// 如果已有记录，跳过插入默认值
+	if count > 0 {
+		log.Printf("DEBUG: auto_sync_config already has %d records, skipping default insertion", count)
+		return nil
 	}
 
+	// 插入默认配置记录
+	_, err = db.DB.Exec(`
+		INSERT INTO auto_sync_config (enabled, frequency_seconds, sync_type, max_retries, retry_delay)
+		VALUES (0, 3600, 'full', 3, 60)
+	`)
+	if err != nil {
+		log.Printf("DEBUG: Failed to insert default auto_sync_config: %v", err)
+		return fmt.Errorf("failed to insert default auto_sync_config: %w", err)
+	}
+
+	log.Printf("DEBUG: Default auto_sync_config inserted successfully")
 	return nil
 }
 
